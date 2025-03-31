@@ -12,242 +12,313 @@ from datetime import datetime
 
 
 class AnswerSheetGenerator:
-    def __init__(self, output_dir="./pdf/"):
-        self.page_width, self.page_height = A4
-        self.margin = 1 * cm
-        self.bubble_radius = 3 * mm
-        self.bubble_spacing = 10 * mm
-        self.output_dir = output_dir
+	def __init__(self, output_dir: str = "pdf", debug=True):
+		self.page_width, self.page_height = A4
+		self.margin = 1 * cm
+		self.bubble_radius = 3 * mm
+		self.bubble_spacing = 10 * mm
+		self.output_dir = output_dir
 
-        # Create output directory if it doesn't exist
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+		# Debug mode for showing bounding boxes
+		self.debug = debug
 
-    def generate_answer_sheet(self, num_questions: int = 30,
-                              choices_per_question: int = 4,
-                              sheet_id: int | None = None,
-                              filename: str | None = None):
-        """
-        Generate an answer sheet with the specified number of questions and choices.
+		# Create output directory if it doesn't exist
+		if not os.path.exists(output_dir):
+			os.makedirs(output_dir)
 
-        Args:
-            num_questions: Number of questions in the test
-            choices_per_question: Number of choices per question
-            sheet_id: unique ID for answer sheet, generated if not provided
-            filename: filename for the PDF, generated if not provided
+	def generate_answer_sheet(self, num_questions=30, choices_per_question=4,
+							  sheet_id=None, filename=None):
+		"""
+		Generate an answer sheet with the specified number of questions and choices.
 
-        Returns:
-            tuple: (filename, sheet_id, metadata)
-        """
-        # Generate parameters if not provided
-        if sheet_id is None:
-            sheet_id = str(uuid.uuid4())
-        if filename is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"answer_sheet_{timestamp}.pdf"
+		Args:
+			num_questions: Number of questions in the test
+			choices_per_question: Number of choices per question (e.g., 4 for A, B, C, D)
+			sheet_id: Optional unique ID for the sheet, generated if not provided
+			filename: Optional filename for the PDF, generated if not provided
 
-        filepath = os.path.join(self.output_dir, filename)
+		Returns:
+			tuple: (filename, sheet_id, metadata)
+		"""
+		# Generate unique ID if not provided
+		if sheet_id is None:
+			sheet_id = str(uuid.uuid4())
 
-        c = canvas.Canvas(filepath, pagesize=A4)
+		# Generate filename if not provided
+		if filename is None:
+			timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+			filename = f"answer_sheet_{timestamp}.pdf"
 
-        # Metadata for the answer sheet
-        metadata = {
-            "sheet_id": sheet_id,
-            "num_questions": num_questions,
-            "choices_per_question": choices_per_question,
-            "created_at": datetime.now().isoformat(),
-            "filename": filename
-        }
+		filepath = os.path.join(self.output_dir, filename)
 
-        # Draw the header and title
-        self._draw_header(c)
+		# Create canvas
+		c = canvas.Canvas(filepath, pagesize=A4)
 
-        # Draw form fields (student ID, class, location)
-        form_region_y = self._draw_form_fields(c)
+		# Metadata for the answer sheet
+		metadata = {
+			"sheet_id": sheet_id,
+			"num_questions": num_questions,
+			"choices_per_question": choices_per_question,
+			"created_at": datetime.now().isoformat(),
+			"filename": filename
+		}
 
-        # Draw answer section
-        answer_region_y = self._draw_answer_section(c, num_questions, choices_per_question, form_region_y)
+		# Draw alignment markers
+		self._draw_alignment_markers(c)
 
-        # Draw barcode/QR code with sheet ID
-        self._draw_barcode(c, sheet_id, answer_region_y)
+		# Draw the header and title
+		header_y = self._draw_header(c)
 
-        # Draw alignment markers
-        self._draw_alignment_markers(c)
+		# Draw form fields (student ID, class, location)
+		form_region_y = self._draw_form_fields(c, header_y)
 
-        # Save the canvas
-        c.save()
+		# Draw barcode/QR code with sheet ID
+		barcode_y = self._draw_barcode(c, sheet_id, form_region_y)
 
-        return filepath, sheet_id, metadata
+		# Calculate available space and draw answer section
+		answer_region_y = self._draw_answer_section(c, num_questions, choices_per_question, barcode_y)
 
-    def _draw_header(self, c: canvas, title: str = "ANSWER SHEET") -> float:
-        """Draw the header of the answer sheet."""
-        c.setFont("Helvetica-Bold", 16)
-        c.drawCentredString(self.page_width / 2, self.page_height - 2 * cm, title)
+		# Save the canvas
+		c.save()
 
-        c.setFont("Helvetica", 10)
-        c.drawCentredString(self.page_width / 2, self.page_height - 2.5 * cm,
-                            "Fill the bubbles completely using a dark pen or pencil")
+		return filepath, sheet_id, metadata
 
-        # Draw horizontal line
-        c.setStrokeColor(colors.black)
-        c.line(self.margin, self.page_height - 3 * cm,
-               self.page_width - self.margin, self.page_height - 3 * cm)
+	def _draw_header(self, c: canvas) -> float:
+		"""Draw the header of the answer sheet."""
+		c.setFont("Helvetica-Bold", 16)
+		c.drawCentredString(self.page_width / 2, self.page_height - 1.5 * cm, "ANSWER SHEET")
 
-        return self.page_height - 3.5 * cm
+		c.setFont("Helvetica", 10)
+		c.drawCentredString(self.page_width / 2, self.page_height - 2 * cm,
+							"Fill the bubbles completely using a dark pen or pencil")
 
-    def _draw_form_fields(self, c: canvas) -> float:
-        """Draw the form fields section (student ID, class, location)."""
-        y_start = self.page_height - 4 * cm
+		# Draw horizontal line
+		c.setStrokeColor(colors.black)
+		c.line(self.margin, self.page_height - 2.5 * cm,
+			   self.page_width - self.margin, self.page_height - 2.5 * cm)
 
-        # Student ID Field
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(self.margin, y_start, "Student ID:")
-        c.rect(self.margin + 3 * cm, y_start - 0.5 * cm, 10 * cm, 0.8 * cm)
+		return self.page_height - 3.5 * cm
 
-        # Class Field
-        y_start -= 2 * cm
-        c.drawString(self.margin, y_start, "Class:")
-        c.rect(self.margin + 3 * cm, y_start - 0.5 * cm, 10 * cm, 0.8 * cm)
+	def _draw_form_fields(self, c: canvas, y_start):
+		"""Draw the form fields section (student ID, class, location)."""
+		# Student ID Field
+		c.setFont("Helvetica-Bold", 12)
+		c.drawString(self.margin, y_start, "Student ID:")
+		c.rect(self.margin + 3 * cm, y_start - 2 * mm, 10 * cm, 0.8 * cm)
 
-        # Location Field
-        y_start -= 2 * cm
-        c.drawString(self.margin, y_start, "Location:")
-        c.rect(self.margin + 3 * cm, y_start - 0.5 * cm, 10 * cm, 0.8 * cm)
+		# Class Field
+		y_start -= 2 * cm
+		c.drawString(self.margin, y_start, "Class:")
+		c.rect(self.margin + 3 * cm, y_start - 2 * mm, 10 * cm, 0.8 * cm)
 
-        # Vietnamese labels
-        c.setFont("Helvetica", 8)
-        c.drawString(self.margin, y_start + 2.3 * cm, "(Mã số sinh viên)")
-        c.drawString(self.margin, y_start + 0.3 * cm, "(Lớp)")
-        c.drawString(self.margin, y_start - 1.7 * cm, "(Địa điểm)")
+		# Location Field
+		y_start -= 2 * cm
+		c.drawString(self.margin, y_start, "Location:")
+		c.rect(self.margin + 3 * cm, y_start - 2 * mm, 10 * cm, 0.8 * cm)
 
-        # Draw horizontal line
-        y_start -= 1.5 * cm
-        c.setStrokeColor(colors.black)
-        c.line(self.margin, y_start,
-               self.page_width - self.margin, y_start)
+		# Draw horizontal line
+		y_start -= 1.5 * cm
+		c.setStrokeColor(colors.black)
+		c.line(self.margin, y_start,
+			   self.page_width - self.margin, y_start)
 
-        return y_start - 0.5 * cm
+		return y_start - 0.5 * cm
 
-    def _draw_answer_section(self, c: canvas, num_questions: int, choices_per_question: int, y_start: float) -> float:
-        """Draw the answer bubbles section."""
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(self.margin, y_start, "ANSWERS")
+	def _draw_debug_box(self, c, x, y, width, height, label=None):
+		"""Draw a debug bounding box."""
+		if self.debug:
+			# Save current graphics state
+			c.saveState()
 
-        y_start -= 1 * cm
+			# Set thin red stroke for debug boxes
+			c.setStrokeColor(colors.red)
+			c.setLineWidth(0.5)
+			c.rect(x, y, width, height, stroke=1, fill=0)
 
-        # Calculate layout parameters
-        questions_per_row = min(5, num_questions)
-        num_rows = (num_questions + questions_per_row - 1) // questions_per_row
+			# Add label if provided
+			if label:
+				c.setFillColor(colors.red)
+				c.setFont("Helvetica", 8)
+				c.drawString(x, y + height + 2 * mm, label)
 
-        # Split into multiple columns if there are many questions
-        columns = 1
-        if num_questions > 25:
-            columns = 2
-            questions_per_column = (num_questions + columns - 1) // columns
-            questions_per_row = min(5, questions_per_column)
-            num_rows = (questions_per_column + questions_per_row - 1) // questions_per_row
+			# Restore graphics state
+			c.restoreState()
 
-        column_width = (self.page_width - 2 * self.margin) / columns
+	def _draw_barcode(self, c, sheet_id, y_start):
+		"""Draw QR code with sheet ID."""
+		c.setFont("Helvetica-Bold", 12)
+		c.drawString(self.margin, y_start, "SHEET ID")
 
-        # Draw column headers
-        for col in range(columns):
-            col_x = self.margin + col * column_width
-            c.setFont("Helvetica-Bold", 10)
-            c.drawString(col_x, y_start, f"Questions {col * questions_per_column + 1} - {min((col + 1) * questions_per_column, num_questions)}")
+		# Create QR code
+		qr_code = qr.QrCodeWidget(sheet_id)
+		bounds = qr_code.getBounds()
+		width = bounds[2] - bounds[0]
+		height = bounds[3] - bounds[1]
 
-        y_start -= 0.7 * cm
+		# Set QR code size
+		qr_size = 3 * cm
 
-        # Draw the answer bubbles
-        choices = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-        row_height = choices_per_question * self.bubble_spacing + 0.5 * cm
+		# Create drawing for QR code
+		d = Drawing(qr_size, qr_size, transform=[qr_size / width, 0, 0, qr_size / height, 0, 0])
+		d.add(qr_code)
 
-        for col in range(columns):
-            col_start = col * questions_per_column
-            col_end = min((col + 1) * questions_per_column, num_questions)
-            col_x = self.margin + col * column_width
+		# Position and render QR code
+		renderPDF.draw(d, c, self.margin, y_start - qr_size - 0.5 * cm)
 
-            for row in range(num_rows):
-                for q_idx in range(questions_per_row):
-                    question_num = col_start + row * questions_per_row + q_idx + 1
+		# Add sheet ID as text for backup
+		c.setFont("Helvetica", 8)
+		c.drawString(self.margin, y_start - qr_size - 1 * cm, f"ID: {sheet_id}")
 
-                    if question_num > col_end:
-                        continue
+		return y_start - qr_size - 1.5 * cm
 
-                    # Question number
-                    q_x = col_x + q_idx * (column_width / questions_per_row)
-                    q_y = y_start - row * row_height
-                    c.setFont("Helvetica", 10)
-                    c.drawString(q_x, q_y, f"{question_num}.")
+	def _draw_answer_section(self, c: canvas, num_questions, choices_per_question, y_start) -> float:
+		"""Draw the answer bubbles section with proper spacing and layout management."""
+		# Available height for the answer section
+		available_height = y_start - self.margin
 
-                    # Draw bubbles for each choice
-                    for choice_idx in range(choices_per_question):
-                        choice_y = q_y - (choice_idx + 1) * self.bubble_spacing
-                        c.circle(q_x + 1 * cm, choice_y, self.bubble_radius, stroke=1, fill=0)
-                        c.drawString(q_x + 1 * cm + self.bubble_radius * 1.5,
-                                     choice_y - self.bubble_radius / 2,
-                                     choices[choice_idx])
+		# Calculate the available width for the answer section
+		available_width = self.page_width - 2 * self.margin
 
-        # Calculate the final y position
-        final_y = y_start - num_rows * row_height - 1 * cm
+		# Calculate space needed for each choice bubble and letter
+		choice_width = self.bubble_spacing * 1.5
 
-        # Draw horizontal line at the bottom of answer section
-        c.setStrokeColor(colors.black)
-        c.line(self.margin, final_y, self.page_width - self.margin, final_y)
+		# Calculate width needed for a single answer group (question number + all choices)
+		question_number_width = 1 * cm
+		answer_group_width = question_number_width + (choices_per_question * choice_width)
 
-        return final_y - 0.5 * cm
+		# Determine how many groups can fit horizontally in a row
+		groups_per_row = max(1, int(available_width / answer_group_width))
 
-    def _draw_barcode(self, c, sheet_id, y_start):
-        """Draw QR code with sheet ID."""
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(self.margin, y_start, "SHEET ID")
+		# Define how many questions per group (for organizing visually)
+		questions_per_group = 5
 
-        # Create QR code
-        qr_code = qr.QrCodeWidget(sheet_id)
-        bounds = qr_code.getBounds()
-        width = bounds[2] - bounds[0]
-        height = bounds[3] - bounds[1]
+		# Calculate height needed for each question
+		question_height = 1.2 * cm
 
-        # Set QR code size
-        qr_size = 3 * cm
+		# Calculate height needed for each group
+		group_height = question_height * questions_per_group
 
-        # Create drawing for QR code
-        d = Drawing(qr_size, qr_size, transform=[qr_size / width, 0, 0, qr_size / height, 0, 0])
-        d.add(qr_code)
+		# Calculate total number of groups
+		total_groups = (num_questions + questions_per_group - 1) // questions_per_group
 
-        # Position and render QR code
-        renderPDF.draw(d, c, self.margin, y_start - qr_size - 0.5 * cm)
+		# Calculate number of rows needed
+		total_rows = (total_groups + groups_per_row - 1) // groups_per_row
 
-        # Add sheet ID as text for backup
-        c.setFont("Helvetica", 8)
-        c.drawString(self.margin, y_start - qr_size - 1 * cm, f"ID: {sheet_id}")
+		# Calculate total height needed
+		total_height_needed = (total_rows * group_height) + 2 * cm  # Extra space for headers
 
-        return y_start - qr_size - 1.5 * cm
+		# Check if we have enough space, adjust if necessary
+		if total_height_needed > available_height:
+			# Calculate how many questions we can fit
+			max_rows = int(available_height / group_height)
+			max_groups = max_rows * groups_per_row
+			max_questions = max_groups * questions_per_group
 
-    def _draw_alignment_markers(self, c):
-        """Draw alignment markers in the corners for easier scanning."""
-        marker_size = 0.5 * cm
+			print(f"Warning: Not enough space for {num_questions} questions. Limiting to {max_questions} questions.")
+			num_questions = max_questions
 
-        # Top-left marker
-        c.rect(self.margin, self.page_height - self.margin - marker_size, marker_size, marker_size, fill=1)
+			# Recalculate total groups
+			total_groups = (num_questions + questions_per_group - 1) // questions_per_group
 
-        # Top-right marker
-        c.rect(self.page_width - self.margin - marker_size, self.page_height - self.margin - marker_size,
-               marker_size, marker_size, fill=1)
+		# Draw the section title
+		c.setFont("Helvetica-Bold", 12)
+		c.drawString(self.margin, y_start, "ANSWERS")
 
-        # Bottom-left marker
-        c.rect(self.margin, self.margin, marker_size, marker_size, fill=1)
+		y_start -= 1 * cm
 
-        # Bottom-right marker
-        c.rect(self.page_width - self.margin - marker_size, self.margin, marker_size, marker_size, fill=1)
+		# Draw answer layout
+		choices = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+
+		# Draw debug box for the entire answer section
+		section_height = total_height_needed
+		self._draw_debug_box(c,
+							 self.margin, y_start - section_height + 1 * cm,
+							 available_width, section_height,
+							 "(Debug) Answer Section")
+
+		# Current Y position for drawing
+		current_y = y_start
+
+		# Draw the groups
+		for group_idx in range(total_groups):
+			# Calculate group position (row and column)
+			row = group_idx // groups_per_row
+			col = group_idx % groups_per_row
+
+			# Calculate group boundaries
+			group_x = self.margin + (col * (available_width / groups_per_row))
+			group_y = current_y - (row * group_height)
+
+			# Calculate first and last question in this group
+			first_q = (group_idx * questions_per_group) + 1
+			last_q = min((group_idx + 1) * questions_per_group, num_questions)
+
+			# Draw group header
+			# c.setFont("Helvetica-Bold", 10)
+			# c.drawString(group_x, group_y, f"Questions {first_q} - {last_q}")
+
+			# Debug - draw group box
+			group_width = available_width / groups_per_row
+			actual_group_height = ((last_q - first_q + 1) * question_height) + 0.5 * cm  # Height based on actual questions
+			self._draw_debug_box(c,
+								 group_x, group_y - actual_group_height + 0.5 * cm,
+								 group_width, actual_group_height,
+								 f"Group {group_idx + 1}")
+
+			# Draw questions in this group
+			question_y = group_y - 0.5 * cm  # Start below group header
+
+			for q_num in range(first_q, last_q + 1):
+				# Draw question number
+				q_x = group_x + 0.2 * cm  # Small indent
+				c.setFont("Helvetica", 10)
+				c.drawString(q_x, question_y - 2 * mm, f"{q_num}.")
+
+				# Draw bubbles for each choice horizontally
+				for choice_idx in range(choices_per_question):
+					# Position for this choice
+					choice_x = q_x + question_number_width + (choice_idx * choice_width)
+
+					# Draw the bubble
+					c.circle(choice_x, question_y, self.bubble_radius, stroke=1, fill=0)
+
+					# Draw the choice letter above the bubble
+					c.drawString(choice_x - self.bubble_radius / 2,
+								 question_y + self.bubble_radius * 1.5,
+								 choices[choice_idx])
+
+				# Move to next question
+				question_y -= question_height
+
+		# Draw horizontal line at the bottom of answer section
+		final_y = y_start - section_height + 1 * cm
+		c.setStrokeColor(colors.black)
+		c.line(self.margin, final_y, self.page_width - self.margin, final_y)
+
+		return final_y - 0.5 * cm
+
+	def _draw_alignment_markers(self, c):
+		"""Draw alignment markers in the corners for easier scanning."""
+		marker_size = 0.5 * cm
+		offset = self.margin + marker_size
+
+		# Top-left
+		c.rect(self.margin, self.page_height - offset, marker_size, marker_size, fill=1)
+		# Top-right
+		c.rect(self.page_width - offset, self.page_height - offset, marker_size, marker_size, fill=1)
+		# Bottom-left
+		c.rect(self.margin, self.margin, marker_size, marker_size, fill=1)
+		# Bottom-right
+		c.rect(self.page_width - offset, self.margin, marker_size, marker_size, fill=1)
 
 
 # Example usage
 if __name__ == "__main__":
-    generator = AnswerSheetGenerator()
+	generator = AnswerSheetGenerator(debug=False)
 
-    # Generate a sample answer sheet with 30 questions, 4 choices each
-    filepath, sheet_id, metadata = generator.generate_answer_sheet(num_questions=28, choices_per_question=3)
+	# Generate a sample answer sheet with 30 questions, 4 choices each
+	filepath, sheet_id, metadata = generator.generate_answer_sheet(num_questions=17, choices_per_question=5)
 
-    print(f"Generated answer sheet: {filepath}")
-    print(f"Sheet ID: {sheet_id}")
-    print(f"Metadata: {json.dumps(metadata, indent=2)}")
+	print(f"Generated answer sheet: {filepath}")
+	print(f"Sheet ID: {sheet_id}")
+	print(f"Metadata: {json.dumps(metadata, indent=2)}")
