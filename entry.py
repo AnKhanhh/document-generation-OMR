@@ -12,7 +12,7 @@ from datetime import datetime
 
 
 class AnswerSheetGenerator:
-    def __init__(self, output_dir="pdf", debug=True):
+    def __init__(self, output_dir="out/pdf", debug=True):
         self.page_width, self.page_height = A4
         self.margin = 1 * cm
         self.bubble_radius = 3 * mm
@@ -233,16 +233,17 @@ class AnswerSheetGenerator:
             # Recalculate total groups
             total_groups = (num_questions + questions_per_group - 1) // questions_per_group
 
-        # Draw the section title
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(self.margin, y_start, "ANSWERS")
+        if not self.debug:
+            # section title, not drawn when debug to avoid overlap
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(self.margin, y_start, "ANSWERS")
 
         y_start -= 1 * cm
 
         # Draw answer layout
         choices = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
-        # Draw debug box for the entire answer section
+        # Answer section debug box
         section_height = total_height_needed
         self._draw_debug_box(c, self.margin, y_start - section_height + 1 * cm,
                              available_width, section_height, "(Debug) Answer Section")
@@ -264,9 +265,10 @@ class AnswerSheetGenerator:
             first_q = (group_idx * questions_per_group) + 1
             last_q = min((group_idx + 1) * questions_per_group, num_questions)
 
-            # Draw group header
-            c.setFont("Helvetica-Bold", 10)
-            c.drawString(group_x, group_y, f"Questions {first_q} - {last_q}")
+            if not self.debug:
+                # Group header, not drawn when debug to avoid overlap
+                c.setFont("Helvetica-Bold", 10)
+                c.drawString(group_x, group_y, f"Questions {first_q} - {last_q}")
 
             # Debug - draw group box
             group_width = available_width / groups_per_row
@@ -301,12 +303,7 @@ class AnswerSheetGenerator:
                 # Move to next question
                 question_y -= question_height
 
-        # Draw horizontal line at the bottom of answer section
-        final_y = y_start - section_height + 1 * cm
-        c.setStrokeColor(colors.black)
-        self._draw_horizontal_line(c, final_y)
-
-        return final_y - 0.5 * cm
+        return y_start - section_height + 0.5 * cm
 
     def _draw_alignment_markers(self, c):
         """Draw alignment markers in the corners for easier scanning."""
@@ -329,10 +326,10 @@ class AnswerSheetGenerator:
 
 # Example usage
 if __name__ == "__main__":
-    generator = AnswerSheetGenerator()
+    generator = AnswerSheetGenerator(debug=False)
 
     # Generate a sample answer sheet with 30 questions, 4 choices each
-    filepath, sheet_id, metadata = generator.generate_answer_sheet(num_questions=50, choices_per_question=2)
+    filepath, sheet_id, metadata = generator.generate_answer_sheet(num_questions=30, choices_per_question=4)
 
     print(f"Generated answer sheet: {filepath}")
     print(f"Sheet ID: {sheet_id}")
