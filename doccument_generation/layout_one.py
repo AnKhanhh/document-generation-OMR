@@ -104,27 +104,31 @@ class AnswerSheetGenerator:
         c.setStrokeColor(colors.black)
         self._draw_horizontal_line(c, self.page_height - 2.5 * cm)
 
-        return self.page_height - 3.5 * cm
+        return self.page_height - 3 * cm
 
-    def _draw_form_fields(self, c: canvas, y_start):
+    def _draw_form_fields(self, c: canvas, y_start: float) -> float:
         """Draw the form fields section (student ID, class, location)."""
-        # Student ID Field
         c.setFont("Helvetica-Bold", 12)
+        c.drawString(self.margin, y_start, "INFORMATION FIELDS")
+        y_start -= 1 * cm
+
+        # Student ID Field
+        c.setFont("Helvetica-Bold", 10)
         c.drawString(self.margin, y_start, "Student ID:")
         c.rect(self.margin + 3 * cm, y_start - 2 * mm, 10 * cm, 0.8 * cm)
 
         # Class Field
-        y_start -= 2 * cm
+        y_start -= 1.25 * cm
         c.drawString(self.margin, y_start, "Class:")
         c.rect(self.margin + 3 * cm, y_start - 2 * mm, 10 * cm, 0.8 * cm)
 
         # Location Field
-        y_start -= 2 * cm
+        y_start -= 1.25 * cm
         c.drawString(self.margin, y_start, "Location:")
         c.rect(self.margin + 3 * cm, y_start - 2 * mm, 10 * cm, 0.8 * cm)
 
         # Draw horizontal line
-        y_start -= 1.5 * cm
+        y_start -= 1.25 * cm
         c.setStrokeColor(colors.black)
         self._draw_horizontal_line(c, y_start)
 
@@ -174,7 +178,7 @@ class AnswerSheetGenerator:
             c.restoreState()
 
         # Position and render QR code
-        renderPDF.draw(d, c, qr_x, y_start - qr_size - 0.5 * cm)
+        renderPDF.draw(d, c, qr_x, y_start - qr_size)
 
         # Add sheet ID as vertical text when in debug mode
         if self.debug:
@@ -194,8 +198,10 @@ class AnswerSheetGenerator:
         available_height = y_start - (self.margin - self.marker_size)
         available_width = self.page_width - 2 * self.margin
 
-        # Calculate space needed for each choice bubble and letter
-        choice_width = self.bubble_spacing * 1.5
+        # Define space needed for each choice bubble and letter
+        choice_width = self.bubble_spacing
+        # Define height needed for each question
+        question_height = 8 * mm
 
         # Calculate width needed for a single answer group (question number + all choices)
         question_number_width = 1 * cm
@@ -206,9 +212,6 @@ class AnswerSheetGenerator:
 
         # Calculate horizontal group margin to ensure proper spacing between groups
         horizontal_group_margin = (available_width - (groups_per_row * answer_group_width)) / max(1, groups_per_row - 1)
-
-        # Calculate height needed for each question
-        question_height = 1.2 * cm
 
         # Calculate height needed for each group with vertical padding and header
         # Always include group header height whether in debug mode or not
@@ -243,7 +246,7 @@ class AnswerSheetGenerator:
 
         # section title
         c.setFont("Helvetica-Bold", 12)
-        c.drawString(self.margin, y_start, "ANSWERS")
+        c.drawString(self.margin, y_start, "ANSWER SECTION")
 
         # Answer section y-coordinate starts
         y_start -= section_top_margin
@@ -266,10 +269,10 @@ class AnswerSheetGenerator:
         y_start -= 0.5 * cm
 
         # Draw answer grid
-        for group_idx in range(total_groups):
+        for group_no in range(total_groups):
             # Calculate group position (row and column)
-            row = group_idx // groups_per_row
-            col = group_idx % groups_per_row
+            row = group_no // groups_per_row
+            col = group_no % groups_per_row
 
             # Calculate group boundaries with proper margins between groups
             if groups_per_row > 1:
@@ -282,8 +285,8 @@ class AnswerSheetGenerator:
             group_top_y = y_start - (row * group_height)
 
             # Calculate first and last question in this group
-            first_q = (group_idx * questions_per_group) + 1
-            last_q = min((group_idx + 1) * questions_per_group, num_questions)
+            first_q = (group_no * questions_per_group) + 1
+            last_q = min((group_no + 1) * questions_per_group, num_questions)
 
             # Calculate actual questions in this group
             questions_in_group = last_q - first_q + 1
@@ -302,28 +305,27 @@ class AnswerSheetGenerator:
             self._draw_debug_box(c,
                                  group_x, group_top_y - actual_group_height,
                                  answer_group_width, actual_group_height,
-                                 f"Group {group_idx + 1}")
+                                 f"Group {group_no + 1}")
 
             # Draw questions in this group, starting below the header
             question_y = group_top_y - group_header_height
 
-            for q_num in range(first_q, last_q + 1):
+            for q_no in range(first_q, last_q + 1):
                 # Draw question number
-                q_x = group_x + 0.2 * cm  # Small indent
                 c.setFont("Helvetica", 10)
-                c.drawString(q_x, question_y - 2 * mm, f"{q_num}.")
+                c.drawString(group_x, question_y - 2 * mm, f"{q_no}.")
 
                 # Draw bubbles for each choice horizontally
-                for choice_idx in range(choices_per_question):
+                for choice_no in range(choices_per_question):
                     # Position for this choice
-                    choice_x = q_x + question_number_width + (choice_idx * choice_width)
+                    choice_x = group_x + question_number_width + (choice_no * choice_width)
 
                     # Draw the bubble
                     c.circle(choice_x, question_y, self.bubble_radius, stroke=1, fill=0)
 
                     # Draw the choice letter inside the bubble
                     c.setFont("Helvetica", 8)  # Smaller font for inside the bubble
-                    letter = choices[choice_idx]
+                    letter = choices[choice_no]
                     # Center the letter in the bubble
                     letter_width = c.stringWidth(letter, "Helvetica", 8)
                     letter_x = choice_x - (letter_width / 2)

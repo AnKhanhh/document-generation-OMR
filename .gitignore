@@ -1,4 +1,4 @@
 /.idea
 /venv
 /out
-*/__pycache__/
+**/__pycache__/
