@@ -14,17 +14,11 @@ from reportlab.pdfgen import canvas
 
 class AnswerSheetGenerator:
     """
-    A class to generate multiple-choice answer sheets with customizable layouts.
+    Generator of multiple-choice answer sheets with dynamic layouts.
     """
 
     def __init__(self, output_dir="out/pdf", debug=True):
-        """
-        Initialize the answer sheet generator with default settings.
-
-        Args:
-            output_dir: Directory where PDF files will be saved
-            debug: Whether to show debug bounding boxes and information
-        """
+        """Initialize generator with default settings."""
         # Page dimensions
         self.page_width, self.page_height = A4
 
@@ -55,17 +49,7 @@ class AnswerSheetGenerator:
                               sheet_id: str = None,
                               filename: str = None) -> Tuple[str, str, Dict[str, Any]]:
         """
-        Generate an answer sheet with the specified number of questions and choices.
-
-        Args:
-            num_questions: Number of questions in the test
-            choices_per_question: Number of choices per question (e.g., 4 for A, B, C, D)
-            questions_per_group: For grouping questions visually
-            sheet_id: Optional unique ID for the sheet, generated if not provided
-            filename: Optional filename for the PDF, generated if not provided
-
-        Returns:
-            tuple: (filepath, sheet_id, metadata)
+        Generate answer sheet. Returns filepath, sheet_id, custom metadata
         """
         # Generate unique ID and filename if not provided
         sheet_id = sheet_id or str(uuid.uuid4())
@@ -128,14 +112,7 @@ class AnswerSheetGenerator:
 
     def _draw_form_fields(self, c: canvas, y_start: float) -> float:
         """
-        Draw the form fields section (student ID, class, location).
-
-        Args:
-            c: ReportLab canvas object
-            y_start: Starting Y-coordinate
-
-        Returns:
-            float: Y-coordinate below the form fields
+        Draw the information fields
         """
         # Section header
         c.setFont("Helvetica-Bold", 12)
@@ -191,12 +168,7 @@ class AnswerSheetGenerator:
 
     def _draw_barcode(self, c: canvas, sheet_id: str, y_start: float) -> None:
         """
-        Draw QR code with sheet ID, positioned on the right side.
-
-        Args:
-            c: ReportLab canvas object
-            sheet_id: Unique identifier for this sheet
-            y_start: Starting Y-coordinate
+        Draw sheet_id QR code, right-aligned.
         """
         # QR code dimensions and position
         qr_size = 4 * cm
@@ -424,10 +396,6 @@ class AnswerSheetGenerator:
 
     def _draw_horizontal_line(self, c: canvas, y_position: float) -> None:
         """
-        Draw a straight horizontal line across the page.
-
-        Args:
-            c: ReportLab canvas object
-            y_position: Y-coordinate for the line
+        Draw a straight line, account for margin.
         """
         c.line(self.margin, y_position, self.page_width - self.margin, y_position)
