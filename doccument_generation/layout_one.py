@@ -85,9 +85,6 @@ class AnswerSheetGenerator:
     def _draw_header(self, c: canvas) -> float:
         """
         Draw the header of the answer sheet.
-
-        Returns:
-            float: Y-coordinate below the header
         """
         # Main title
         c.setFont("Helvetica-Bold", 16)
@@ -145,13 +142,7 @@ class AnswerSheetGenerator:
 
     def _draw_debug_box(self, c: canvas, x: float, y: float, width: float, height: float, label: str = None) -> None:
         """
-        Draw a debug bounding box with optional label.
-
-        Args:
-            c: ReportLab canvas object
-            x, y: Bottom-left coordinates of the box
-            width, height: Dimensions of the box
-            label: Optional label for the box
+        Draw a debug bounding box, label optional.
         """
         if self.debug:
             c.saveState()
@@ -209,16 +200,6 @@ class AnswerSheetGenerator:
                              y_start: float) -> float:
         """
         Draw the answer bubbles section with proper spacing and layout management.
-
-        Args:
-            c: ReportLab canvas object
-            num_questions: Total number of questions
-            choices_per_question: Number of choice bubbles per question
-            questions_per_group: Number of questions in each visual group
-            y_start: Starting Y-coordinate
-
-        Returns:
-            float: Y-coordinate below the answer section
         """
         # Calculate available space
         available_height = y_start - (self.margin - self.marker_size)
@@ -230,14 +211,21 @@ class AnswerSheetGenerator:
         question_number_width = 1 * cm
         answer_group_width = question_number_width + (choices_per_question * choice_width)
 
-        # Calculate group layout
-        groups_per_row = max(1, int(available_width / answer_group_width))
-        horizontal_group_margin = (available_width - (groups_per_row * answer_group_width)) / max(1, groups_per_row - 1)
+        # Calculate maximum groups per row based on available width
+        max_groups_per_row = max(1, int(available_width / answer_group_width))
         group_height = (question_height * questions_per_group) + self.q_group_vertical_padding + self.group_header_height
 
-        # Calculate total size required
+        # Calculate total groups needed
         total_groups = (num_questions + questions_per_group - 1) // questions_per_group
-        total_rows = (total_groups + groups_per_row - 1) // groups_per_row
+
+        # Calculate minimum number of rows needed
+        min_rows_needed = (total_groups + max_groups_per_row - 1) // max_groups_per_row
+
+        # Calculate balanced distribution of groups per row
+        groups_per_row = self._calculate_balanced_distribution(total_groups, min_rows_needed)
+
+        # Calculate total height needed based on the number of rows
+        total_rows = len(groups_per_row)
         section_top_margin = 0.5 * cm
         total_height_needed = (total_rows * group_height) + section_top_margin
 
@@ -245,16 +233,23 @@ class AnswerSheetGenerator:
         if total_height_needed > available_height:
             available_height_for_groups = available_height - section_top_margin
             max_rows = int(available_height_for_groups / group_height)
-            max_groups = max_rows * groups_per_row
-            max_questions = max_groups * questions_per_group
 
-            print(f"Warning: Not enough space for {num_questions} questions. Limiting to {max_questions} questions.")
-            num_questions = max_questions
+            if max_rows < min_rows_needed:
+                # Not enough vertical space, need to reduce number of questions
+                # Calculate max groups that can fit
+                max_groups = 0
+                for i in range(max_rows):
+                    max_groups += groups_per_row[i] if i < len(groups_per_row) else 0
 
-            # Recalculate layout
-            total_groups = (num_questions + questions_per_group - 1) // questions_per_group
-            total_rows = (total_groups + groups_per_row - 1) // groups_per_row
-            total_height_needed = (total_rows * group_height) + section_top_margin
+                max_questions = max_groups * questions_per_group
+                print(f"Warning: Not enough space for {num_questions} questions. Limiting to {max_questions} questions.")
+                num_questions = max_questions
+
+                # Recalculate distribution
+                total_groups = (num_questions + questions_per_group - 1) // questions_per_group
+                groups_per_row = self._calculate_balanced_distribution(total_groups, max_rows)
+                total_rows = len(groups_per_row)
+                total_height_needed = (total_rows * group_height) + section_top_margin
 
         # Draw section header
         c.setFont("Helvetica-Bold", 12)
@@ -278,49 +273,90 @@ class AnswerSheetGenerator:
         # Apply section top padding
         y_start -= 0.5 * cm
 
-        # Draw answer groups
-        for group_no in range(total_groups):
-            # Calculate group position
-            row = group_no // groups_per_row
-            col = group_no % groups_per_row
+        # Track the current group being drawn
+        current_group = 0
 
-            # Position group with proper margins
-            if groups_per_row > 1:
-                group_x = self.margin + (col * (answer_group_width + horizontal_group_margin))
+        # Draw answer groups row by row
+        for row in range(total_rows):
+            # Calculate groups in this row and their horizontal spacing
+            groups_in_this_row = groups_per_row[row]
+
+            # Evenly distribute groups across available width
+            if groups_in_this_row > 1:
+                horizontal_group_margin = (available_width - (groups_in_this_row * answer_group_width)) / (groups_in_this_row - 1)
             else:
-                group_x = self.margin
+                # Center a single group
+                horizontal_group_margin = 0
 
-            group_top_y = y_start - (row * group_height)
+            # Set Y-coordinate for this row
+            row_top_y = y_start - (row * group_height)
 
-            # Calculate question range for this group
-            first_q = (group_no * questions_per_group) + 1
-            last_q = min((group_no + 1) * questions_per_group, num_questions)
-            questions_in_group = last_q - first_q + 1
+            # Draw all groups in this row
+            for col in range(groups_in_this_row):
+                if current_group >= total_groups:
+                    break
 
-            # Calculate group height
-            is_last_row = (row == total_rows - 1)
-            actual_group_height = (questions_in_group * question_height) + self.group_header_height
-            if not is_last_row:
-                actual_group_height += self.q_group_vertical_padding
+                # Calculate horizontal position (centered if single group)
+                if groups_in_this_row > 1:
+                    group_x = self.margin + (col * (answer_group_width + horizontal_group_margin))
+                else:
+                    # Center single group
+                    group_x = self.margin + (available_width - answer_group_width) / 2
 
-            # Draw group header
-            c.setFont("Helvetica-Bold", 10)
-            c.drawString(group_x, group_top_y, f"Questions {first_q} - {last_q}")
+                # Calculate question range for this group
+                first_q = (current_group * questions_per_group) + 1
+                last_q = min((current_group + 1) * questions_per_group, num_questions)
+                questions_in_group = last_q - first_q + 1
 
-            # Draw group debug box
-            self._draw_debug_box(c,
-                                 group_x, group_top_y - actual_group_height,
-                                 answer_group_width, actual_group_height,
-                                 f"Group {group_no + 1}")
+                # Calculate group height
+                is_last_row = (row == total_rows - 1)
+                actual_group_height = (questions_in_group * question_height) + self.group_header_height
+                if not is_last_row:
+                    actual_group_height += self.q_group_vertical_padding
 
-            # Draw questions in this group
-            self._draw_question_group(c, group_x, group_top_y - self.group_header_height,
-                                      first_q, last_q, question_height, question_number_width,
-                                      choice_width, choices_per_question, choices)
+                # Draw group header
+                c.setFont("Helvetica-Bold", 10)
+                c.drawString(group_x, row_top_y, f"Questions {first_q} - {last_q}")
+
+                # Draw group debug box
+                self._draw_debug_box(c,
+                                     group_x, row_top_y - actual_group_height,
+                                     answer_group_width, actual_group_height,
+                                     f"Group {current_group + 1}")
+
+                # Draw questions in this group
+                self._draw_question_group(c, group_x, row_top_y - self.group_header_height,
+                                          first_q, last_q, question_height, question_number_width,
+                                          choice_width, choices_per_question, choices)
+
+                # Move to next group
+                current_group += 1
 
         # Calculate final y position
         final_y = max(section_end_y - 0.5 * cm, self.margin)
         return final_y
+
+    def _calculate_balanced_distribution(self, total_items: int, num_rows: int) -> list:
+        """
+        Calculate a balanced distribution of items across rows.
+
+        Args:
+            total_items: Total number of items to distribute
+            num_rows: Number of rows to distribute across
+
+        Returns:
+            list: Number of items per row
+        """
+        # Base distribution - equal items per row
+        items_per_row = [total_items // num_rows] * num_rows
+
+        # Distribute remainder from top to bottom
+        remainder = total_items % num_rows
+        for i in range(remainder):
+            items_per_row[i] += 1
+
+        # Remove any empty rows
+        return [count for count in items_per_row if count > 0]
 
     def _draw_question_group(self, c: canvas, x: float, y: float,
                              first_q: int, last_q: int,
