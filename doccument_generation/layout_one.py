@@ -22,18 +22,18 @@ class AnswerSheetGenerator:
         # Page dimensions
         self.page_width, self.page_height = A4
 
-        # Layout constants
+        # Document layout constants
         self.margin = 1 * cm
-        self.bubble_radius = 3 * mm
-        self.bubble_spacing = 10 * mm
-        self.q_group_vertical_padding = 0.7 * cm
-        self.marker_size = 0.5 * cm
-        self.group_header_height = 0.5 * cm
-
-        # Section spacing constants
         self.header_margin = 1.5 * cm
         self.header_line_margin = 2.5 * cm
-        self.section_spacing = 0.5 * cm
+        self.marker_size = 0.5 * cm
+
+        # Answer section layout constants
+        self.bubble_radius = 3 * mm
+        self.bubble_horizontal_space = 10 * mm
+        self.answer_group_top_margin = 0.4 * cm
+        self.answer_group_label_height = 0.4 * cm
+        self.question_height = 0.8 * cm
 
         # Visual settings
         self.debug = debug
@@ -48,9 +48,7 @@ class AnswerSheetGenerator:
                               questions_per_group: int = 5,
                               sheet_id: str = None,
                               filename: str = None) -> Tuple[str, str, Dict[str, Any]]:
-        """
-        Generate answer sheet. Returns filepath, sheet_id, custom metadata
-        """
+        """Generate answer sheet. Returns filepath, sheet_id, custom metadata"""
         # Generate unique ID and filename if not provided
         sheet_id = sheet_id or str(uuid.uuid4())
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -83,9 +81,7 @@ class AnswerSheetGenerator:
         return filepath, sheet_id, metadata
 
     def _draw_header(self, c: canvas) -> float:
-        """
-        Draw the header of the answer sheet.
-        """
+        """Draw the header of the answer sheet."""
         # Main title
         c.setFont("Helvetica-Bold", 16)
         c.drawCentredString(self.page_width / 2, self.page_height - self.header_margin, "ANSWER SHEET")
@@ -108,9 +104,7 @@ class AnswerSheetGenerator:
         return self.page_height - 3 * cm
 
     def _draw_form_fields(self, c: canvas, y_start: float) -> float:
-        """
-        Draw the information fields
-        """
+        """Draw the information fields"""
         # Section header
         c.setFont("Helvetica-Bold", 12)
         c.drawString(self.margin, y_start, "INFORMATION FIELDS")
@@ -138,30 +132,25 @@ class AnswerSheetGenerator:
         c.setStrokeColor(colors.black)
         self._draw_horizontal_line(c, y_start)
 
-        return y_start - self.section_spacing
+        return y_start
 
     def _draw_debug_box(self, c: canvas, x: float, y: float, width: float, height: float, label: str = None) -> None:
-        """
-        Draw a debug bounding box, label optional.
-        """
-        if self.debug:
-            c.saveState()
-            c.setStrokeColor(colors.red)
-            c.setLineWidth(0.5)
-            c.rect(x, y, width, height, stroke=1, fill=0)
+        """Draw a debug bounding box, label optional."""
+        assert self.debug, "debug function evoked unintentionally"
 
-            if label:
-                c.setFillColor(colors.red)
-                c.setFont("Helvetica", 8)
-                c.drawString(x, y + height + 2 * mm, label)
-
-            c.restoreState()
+        c.saveState()
+        c.setStrokeColor(colors.red)
+        c.setLineWidth(0.5)
+        c.rect(x, y, width, height, stroke=1, fill=0)
+        if label:
+            c.setFillColor(colors.red)
+            c.setFont("Helvetica", 8)
+            c.drawString(x, y + height + 2 * mm, label)
+        c.restoreState()
 
     def _draw_barcode(self, c: canvas, sheet_id: str, y_start: float) -> None:
-        """
-        Draw sheet_id QR code, right-aligned.
-        """
-        # QR code dimensions and position
+        """Draw sheet_id QR code, right-aligned."""
+        # Define QR code basic parameters
         qr_size = 4 * cm
         qr_x = self.page_width - self.margin - qr_size
 
@@ -171,218 +160,156 @@ class AnswerSheetGenerator:
         width = bounds[2] - bounds[0]
         height = bounds[3] - bounds[1]
 
-        # Create drawing for QR code
+        # Draw QR code
         d = Drawing(qr_size, qr_size, transform=[qr_size / width, 0, 0, qr_size / height, 0, 0])
         d.add(qr_code)
+        renderPDF.draw(d, c, qr_x, y_start - qr_size)
 
-        # Debug label
+        # When debug, draw label and ID string
         if self.debug:
             c.saveState()
             c.setFillColor(colors.red)
             c.setFont("Helvetica-Bold", 12)
             c.drawCentredString(qr_x + qr_size / 2, y_start, "SHEET ID")
-            c.restoreState()
-
-        # Render QR code
-        renderPDF.draw(d, c, qr_x, y_start - qr_size)
-
-        # Add sheet ID as vertical text when in debug mode
-        if self.debug:
-            c.saveState()
             c.rotate(90)
             c.setFont("Helvetica", 8)
-            c.setFillColor(colors.red)
             c.drawString(y_start - 5 * cm, - self.page_width + 5 * mm, f"ID: {sheet_id}")
             c.restoreState()
 
     def _draw_answer_section(self, c: canvas,
                              num_questions: int, choices_per_question: int, questions_per_group: int,
                              y_start: float) -> float:
-        """
-        Draw the answer bubbles section with proper spacing and layout management.
-        """
-        # Calculate available space
-        available_height = y_start - (self.margin - self.marker_size)
+        """Draw the answer bubbles section with proper spacing and layout management."""
+        # 1.Define basic parameters for answer section
+        available_height = y_start - (self.margin + self.marker_size)
         available_width = self.page_width - 2 * self.margin
+        answer_section_label_height = 0.5 * cm
+        choice_arr = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
-        # Define layout dimensions
-        choice_width = self.bubble_spacing
-        question_height = 8 * mm
+        # 2.Calculate dimensions for subsections (answer groups)
+        choice_width = self.bubble_horizontal_space
         question_number_width = 1 * cm
-        answer_group_width = question_number_width + (choices_per_question * choice_width)
+        group_width = question_number_width + (choices_per_question * choice_width)
+        # TODO: handle edge case of last row in single-group rows, in step 3 and 4
+        group_height = (self.question_height * questions_per_group) + self.answer_group_label_height
+        group_y_gap = self.answer_group_top_margin
 
-        # Calculate maximum groups per row based on available width
-        max_groups_per_row = max(1, int(available_width / answer_group_width))
-        group_height = (question_height * questions_per_group) + self.q_group_vertical_padding + self.group_header_height
+        # 3.Calculate layout limits, recalibrate parameters to fit
+        # Calibrate width
+        if (max_groups_allowed_per_row := int(available_width / group_width)) < 1:
+            choices_per_question = int((available_width - question_number_width) / choice_width)
+            print(f"Warning: insufficient width, limiting to {choices_per_question} choices per questions")
 
-        # Calculate total groups needed
-        total_groups = (num_questions + questions_per_group - 1) // questions_per_group
+            group_width = question_number_width + (choices_per_question * choice_width)
+            max_groups_allowed_per_row = int(available_width / group_width)
+            assert max_groups_allowed_per_row == 1, "answer section width calibration failed"
 
-        # Calculate minimum number of rows needed
-        min_rows_needed = (total_groups + max_groups_per_row - 1) // max_groups_per_row
+        # Number of groups needed to hold all questions
+        num_group = (num_questions + questions_per_group - 1) // questions_per_group
+        # Number of rows needed to hold all groups
+        num_group_row = (num_group + max_groups_allowed_per_row - 1) // max_groups_allowed_per_row
 
-        # Calculate balanced distribution of groups per row
-        groups_per_row = self._calculate_balanced_distribution(total_groups, min_rows_needed)
+        # Calibrate height
+        # noinspection PyUnusedLocal
+        # If not enough vertical space, fit as many answer groups as possible
+        if (total_height_needed := (num_group_row * (group_height + group_y_gap)) + answer_section_label_height) > available_height:
+            # Recalculate metrics based on limitations
+            num_group_row = int((available_height - answer_section_label_height) / (group_height + group_y_gap))
+            total_height_needed = (num_group_row * (group_height + group_y_gap)) + answer_section_label_height
+            num_group = num_group_row * max_groups_allowed_per_row
+            num_questions = num_group * questions_per_group
+            group_distribution_on_rows: list[int] = [max_groups_allowed_per_row for _ in range(num_group_row)]
+            print(f"Warning: insufficient length, limiting to {num_questions} questions.")
 
-        # Calculate total height needed based on the number of rows
-        total_rows = len(groups_per_row)
-        section_top_margin = 0.5 * cm
-        total_height_needed = (total_rows * group_height) + section_top_margin
+            total_height_needed = (num_group_row * (group_height + group_y_gap)) + answer_section_label_height
+            assert total_height_needed <= available_height, "answer section height calibration failed"
 
-        # Scale down if not enough space
-        if total_height_needed > available_height:
-            available_height_for_groups = available_height - section_top_margin
-            max_rows = int(available_height_for_groups / group_height)
+        # If enough vertical space, try to spread groups evenly across rows
+        else:
+            max_rows_allowed = int((available_height - answer_section_label_height) / (group_height + group_y_gap))
+            group_distribution_on_rows: list = self._equal_bin_packing(num_group, max_rows_allowed, max_groups_allowed_per_row)
+            num_group_row = len(group_distribution_on_rows)
+            total_height_needed = (num_group_row * (group_height + group_y_gap)) + answer_section_label_height
 
-            if max_rows < min_rows_needed:
-                # Not enough vertical space, need to reduce number of questions
-                # Calculate max groups that can fit
-                max_groups = 0
-                for i in range(max_rows):
-                    max_groups += groups_per_row[i] if i < len(groups_per_row) else 0
+        # Calculate section boundaries
+        section_end_y = max(y_start - total_height_needed, self.margin + self.marker_size)
+        section_height = y_start - section_end_y
 
-                max_questions = max_groups * questions_per_group
-                print(f"Warning: Not enough space for {num_questions} questions. Limiting to {max_questions} questions.")
-                num_questions = max_questions
+        # Answer section debug box
+        if self.debug:
+            self._draw_debug_box(c,
+                                 self.margin, section_end_y,
+                                 available_width, section_height,
+                                 "Answer Section Box")
 
-                # Recalculate distribution
-                total_groups = (num_questions + questions_per_group - 1) // questions_per_group
-                groups_per_row = self._calculate_balanced_distribution(total_groups, max_rows)
-                total_rows = len(groups_per_row)
-                total_height_needed = (total_rows * group_height) + section_top_margin
-
-        # Draw section header
+        # Draw section label
+        y_start -= answer_section_label_height
         c.setFont("Helvetica-Bold", 12)
         c.drawString(self.margin, y_start, "ANSWER SECTION")
 
-        # Set Y-coordinate for section content
-        y_start -= section_top_margin
-        choices = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        # Answer group horizontal margin is static across rows, for better OMR
+        if (groups_on_row := group_distribution_on_rows[0]) > 1:
+            group_x_gap = (available_width - (groups_on_row * group_width)) / (groups_on_row - 1)
+        else:
+            group_x_gap = 0
 
-        # Calculate section boundaries
-        section_end_y = y_start - total_height_needed
-        section_end_y = max(section_end_y, self.margin + self.marker_size)
-        section_height = y_start - section_end_y
-
-        # Draw section debug box
-        self._draw_debug_box(c,
-                             self.margin - 0.5 * cm, section_end_y,
-                             available_width + 1 * cm, section_height,
-                             "(Debug) Answer Section")
-
-        # Apply section top padding
-        y_start -= 0.5 * cm
-
-        # Track the current group being drawn
+        # 4.Draw answer groups, row by row
         current_group = 0
+        for row in range(num_group_row):
+            # Add margin on top of each row
+            y_start -= self.answer_group_top_margin
+            # Top y-coord of row after margin
+            row_top_y = y_start
 
-        # Draw answer groups row by row
-        for row in range(total_rows):
-            # Calculate groups in this row and their horizontal spacing
-            groups_in_this_row = groups_per_row[row]
+            # Draw answer groups on a row
+            groups_on_row = group_distribution_on_rows[row]
+            y_start -= self.answer_group_label_height
+            for col in range(groups_on_row):
+                assert current_group < num_group, "answer group index out of bound"
 
-            # Evenly distribute groups across available width
-            if groups_in_this_row > 1:
-                horizontal_group_margin = (available_width - (groups_in_this_row * answer_group_width)) / (groups_in_this_row - 1)
-            else:
-                # Center a single group
-                horizontal_group_margin = 0
-
-            # Set Y-coordinate for this row
-            row_top_y = y_start - (row * group_height)
-
-            # Draw all groups in this row
-            for col in range(groups_in_this_row):
-                if current_group >= total_groups:
-                    break
-
-                # Calculate horizontal position (centered if single group)
-                if groups_in_this_row > 1:
-                    group_x = self.margin + (col * (answer_group_width + horizontal_group_margin))
-                else:
-                    # Center single group
-                    group_x = self.margin + (available_width - answer_group_width) / 2
+                group_x = self.margin + (col * (group_width + group_x_gap))
 
                 # Calculate question range for this group
                 first_q = (current_group * questions_per_group) + 1
                 last_q = min((current_group + 1) * questions_per_group, num_questions)
-                questions_in_group = last_q - first_q + 1
 
-                # Calculate group height
-                is_last_row = (row == total_rows - 1)
-                actual_group_height = (questions_in_group * question_height) + self.group_header_height
-                if not is_last_row:
-                    actual_group_height += self.q_group_vertical_padding
+                if self.debug:
+                    self._draw_debug_box(c, group_x, row_top_y - group_height, group_width, group_height,
+                                         f"Group {current_group + 1} Box")
 
                 # Draw group header
                 c.setFont("Helvetica-Bold", 10)
-                c.drawString(group_x, row_top_y, f"Questions {first_q} - {last_q}")
-
-                # Draw group debug box
-                self._draw_debug_box(c,
-                                     group_x, row_top_y - actual_group_height,
-                                     answer_group_width, actual_group_height,
-                                     f"Group {current_group + 1}")
+                c.drawString(group_x, row_top_y - self.answer_group_label_height, f"Questions {first_q} - {last_q}")
 
                 # Draw questions in this group
-                self._draw_question_group(c, group_x, row_top_y - self.group_header_height,
-                                          first_q, last_q, question_height, question_number_width,
-                                          choice_width, choices_per_question, choices)
+                self._draw_question_group(c, group_x, row_top_y - self.answer_group_label_height,
+                                          first_q, last_q, self.question_height, question_number_width,
+                                          choice_width, choices_per_question, choice_arr)
 
                 # Move to next group
                 current_group += 1
+
+            y_start -= group_height
 
         # Calculate final y position
         final_y = max(section_end_y - 0.5 * cm, self.margin)
         return final_y
 
-    def _calculate_balanced_distribution(self, total_items: int, num_rows: int) -> list:
-        """
-        Calculate a balanced distribution of items across rows.
-
-        Args:
-            total_items: Total number of items to distribute
-            num_rows: Number of rows to distribute across
-
-        Returns:
-            list: Number of items per row
-        """
-        # Base distribution - equal items per row
-        items_per_row = [total_items // num_rows] * num_rows
-
-        # Distribute remainder from top to bottom
-        remainder = total_items % num_rows
-        for i in range(remainder):
-            items_per_row[i] += 1
-
-        # Remove any empty rows
-        return [count for count in items_per_row if count > 0]
-
     def _draw_question_group(self, c: canvas, x: float, y: float,
                              first_q: int, last_q: int,
                              question_height: float, question_number_width: float,
                              choice_width: float, choices_per_question: int, choices: str) -> None:
-        """
-        Draw a group of questions with answer bubbles.
-
-        Args:
-            c: ReportLab canvas object
-            x, y: Top-left position of the question group
-            first_q, last_q: Question number range
-            question_height: Vertical space for each question
-            question_number_width: Width reserved for question number
-            choice_width: Width for each choice bubble
-            choices_per_question: Number of choices per question
-            choices: String of available choice letters
-        """
+        """Draw a group of questions with answer bubbles."""
         question_y = y
 
         for q_no in range(first_q, last_q + 1):
-            # Draw question number
+            # Bubbles are drawn from center, so subtract the other half later
+            question_y -= question_height / 2
+            # 1mm offset to align number with bubble
             c.setFont("Helvetica", 10)
-            c.drawString(x, question_y - 2 * mm, f"{q_no}.")
+            c.drawString(x, question_y - 1 * mm, f"{q_no}.")
 
-            # Draw answer choices
+            # Draw bubbles
             for choice_no in range(choices_per_question):
                 # Calculate bubble position
                 choice_x = x + question_number_width + (choice_no * choice_width)
@@ -394,20 +321,28 @@ class AnswerSheetGenerator:
                 letter = choices[choice_no]
                 self._draw_centered_letter(c, letter, choice_x, question_y)
 
-            # Move to next question
-            question_y -= question_height
+            question_y -= question_height / 2
 
-    def _draw_centered_letter(self, c: canvas, letter: str, x: float, y: float) -> None:
-        """
-        Draw a letter centered in a bubble.
+    def _draw_horizontal_line(self, c: canvas, y_position: float) -> None:
+        """Draw a straight line, account for margin."""
+        c.line(self.margin, y_position, self.page_width - self.margin, y_position)
 
-        Args:
-            c: ReportLab canvas object
-            letter: The letter to draw
-            x, y: Center coordinates of the bubble
-        """
-        c.setFont("Helvetica", 8)  # Smaller font for inside the bubble
+    @staticmethod
+    def draw_horizontal_dashed_line(self, c: canvas, x_start, x_end, y: float, width=1, color=colors.red):
+        """Draw a horizontal dashed line"""
+        c.saveState()
 
+        c.setLineWidth(width)
+        c.setStrokeColor(color)
+        c.setDash([4 * mm, 4 * mm])
+        c.line(x_start, y, x_end, y)
+
+        c.restoreState()
+
+    @staticmethod
+    def _draw_centered_letter(c: canvas, letter: str, x: float, y: float) -> None:
+        """Draw a letter centered in a bubble."""
+        c.setFont("Helvetica", 8)
         # Center the letter in the bubble
         letter_width = c.stringWidth(letter, "Helvetica", 8)
         letter_x = x - (letter_width / 2)
@@ -416,12 +351,7 @@ class AnswerSheetGenerator:
         c.drawString(letter_x, letter_y, letter)
 
     def _draw_alignment_markers(self, c: canvas) -> None:
-        """
-        Draw alignment markers in the corners for easier scanning.
-
-        Args:
-            c: ReportLab canvas object
-        """
+        """Draw alignment markers in the corners for easier scanning."""
         offset = self.margin + self.marker_size
 
         # Draw markers in each corner
@@ -430,8 +360,12 @@ class AnswerSheetGenerator:
         c.rect(self.margin, self.margin, self.marker_size, self.marker_size, fill=1)
         c.rect(self.page_width - offset, self.margin, self.marker_size, self.marker_size, fill=1)
 
-    def _draw_horizontal_line(self, c: canvas, y_position: float) -> None:
-        """
-        Draw a straight line, account for margin.
-        """
-        c.line(self.margin, y_position, self.page_width - self.margin, y_position)
+    @staticmethod
+    def _equal_bin_packing(num_item: int, num_bin: int, bin_cap: int) -> list[int]:
+        """Find equal distribution of balance answer group across rows."""
+        assert num_bin * bin_cap >= num_item, "parameters out of bound in bin packing function"
+        # Base distribution and remainder
+        base = num_item // num_bin
+        remainder = num_item % num_bin
+        # Create and return the distribution list
+        return [base + 1 if i < remainder else base for i in range(num_bin)]

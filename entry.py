@@ -7,9 +7,9 @@ if __name__ == "__main__":
     debug = False
     generator = AnswerSheetGenerator(debug=debug)
     d_generator = AnswerSheetGenerator()
-    num_questions = 10
+    num_questions = 60
+    questions_per_group = 5
     choices_per_question = 4
-    questions_per_group = 10
 
     # Generate a sample answer sheet with 30 questions, 4 choices each
     filepath, sheet_id, metadata = \

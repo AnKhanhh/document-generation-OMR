@@ -2,4 +2,5 @@
 /venv
 /out
 **/__pycache__/
-/test
+**/test/
+**/test.*
