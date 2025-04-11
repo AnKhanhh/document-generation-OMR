@@ -257,13 +257,12 @@ class AnswerSheetGenerator:
         current_group = 0
         for row in range(num_group_row):
             # Add margin on top of each row
-            y_start -= self.answer_group_top_margin
+            y_start -= group_y_gap
             # Top y-coord of row after margin
             row_top_y = y_start
 
             # Draw answer groups on a row
             groups_on_row = group_distribution_on_rows[row]
-            y_start -= self.answer_group_label_height
             for col in range(groups_on_row):
                 assert current_group < num_group, "answer group index out of bound"
 
@@ -354,7 +353,7 @@ class AnswerSheetGenerator:
         """Draw alignment markers in the corners for easier scanning."""
         offset = self.margin + self.marker_size
 
-        # Draw markers in each corner
+        # Draw markers in each corner: top-left, top-right, bot-left, bot-right
         c.rect(self.margin, self.page_height - offset, self.marker_size, self.marker_size, fill=1)
         c.rect(self.page_width - offset, self.page_height - offset, self.marker_size, self.marker_size, fill=1)
         c.rect(self.margin, self.margin, self.marker_size, self.marker_size, fill=1)
