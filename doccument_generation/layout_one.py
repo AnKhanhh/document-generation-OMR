@@ -27,13 +27,15 @@ class AnswerSheetGenerator:
         self.header_margin = 1.5 * cm
         self.header_line_margin = 2.5 * cm
         self.marker_size = 0.5 * cm
+        self.section_label_height = 0.5 * cm
 
         # Answer section layout constants
         self.bubble_radius = 3 * mm
         self.bubble_horizontal_space = 10 * mm
         self.answer_group_top_margin = 0.4 * cm
-        self.answer_group_label_height = 0.4 * cm
+        self.answer_group_label_height = 0.5 * cm
         self.question_height = 0.8 * cm
+        self.question_number_label_width = 1.2 * cm
 
         # Visual settings
         self.debug = debug
@@ -101,13 +103,15 @@ class AnswerSheetGenerator:
         c.setStrokeColor(colors.black)
         self._draw_horizontal_line(c, self.page_height - self.header_line_margin)
 
-        return self.page_height - 3 * cm
+        return self.page_height - self.header_line_margin
 
     def _draw_form_fields(self, c: canvas, y_start: float) -> float:
         """Draw the information fields"""
         # Section header
+        y_start -= self.section_label_height
         c.setFont("Helvetica-Bold", 12)
         c.drawString(self.margin, y_start, "INFORMATION FIELDS")
+
         y_start -= 1 * cm
 
         # Define field height and spacing
@@ -179,18 +183,20 @@ class AnswerSheetGenerator:
     def _draw_answer_section(self, c: canvas,
                              num_questions: int, choices_per_question: int, questions_per_group: int,
                              y_start: float) -> float:
-        """Draw the answer bubbles section with proper spacing and layout management."""
-        # 1.Define basic parameters for answer section
+        """
+        Draw the answer bubbles section with proper spacing and layout management.
+        Some values are defined in build time, but can be overwritten at run time dynamically
+        """
+        # 1.Define basic dimensions for answer section
         available_height = y_start - (self.margin + self.marker_size)
         available_width = self.page_width - 2 * self.margin
-        answer_section_label_height = 0.5 * cm
+        answer_section_label_height = self.section_label_height
         choice_arr = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
-        # 2.Calculate dimensions for subsections (answer groups)
+        # 2.Initialize subsections (answer groups) parameters
         choice_width = self.bubble_horizontal_space
-        question_number_width = 1 * cm
+        question_number_width = self.question_number_label_width
         group_width = question_number_width + (choices_per_question * choice_width)
-        # TODO: handle edge case of last row in single-group rows, in step 3 and 4
         group_height = (self.question_height * questions_per_group) + self.answer_group_label_height
         group_y_gap = self.answer_group_top_margin
 
@@ -257,13 +263,12 @@ class AnswerSheetGenerator:
         current_group = 0
         for row in range(num_group_row):
             # Add margin on top of each row
-            y_start -= self.answer_group_top_margin
+            y_start -= group_y_gap
             # Top y-coord of row after margin
             row_top_y = y_start
 
             # Draw answer groups on a row
             groups_on_row = group_distribution_on_rows[row]
-            y_start -= self.answer_group_label_height
             for col in range(groups_on_row):
                 assert current_group < num_group, "answer group index out of bound"
 
@@ -277,11 +282,12 @@ class AnswerSheetGenerator:
                     self._draw_debug_box(c, group_x, row_top_y - group_height, group_width, group_height,
                                          f"Group {current_group + 1} Box")
 
-                # Draw group header
+                # Draw group header, offset to add space at bottom
                 c.setFont("Helvetica-Bold", 10)
-                c.drawString(group_x, row_top_y - self.answer_group_label_height, f"Questions {first_q} - {last_q}")
+                c.drawString(group_x, row_top_y - self.answer_group_label_height + 1 * mm,
+                             f"Questions {first_q} - {last_q}")
 
-                # Draw questions in this group
+                # Draw questions in group
                 self._draw_question_group(c, group_x, row_top_y - self.answer_group_label_height,
                                           first_q, last_q, self.question_height, question_number_width,
                                           choice_width, choices_per_question, choice_arr)
@@ -299,29 +305,36 @@ class AnswerSheetGenerator:
                              first_q: int, last_q: int,
                              question_height: float, question_number_width: float,
                              choice_width: float, choices_per_question: int, choices: str) -> None:
-        """Draw a group of questions with answer bubbles."""
-        question_y = y
+        """
+        Draw a group of questions with answer bubbles.
+        Reportlab bubbles are drawn from center, code needs to accommodate that offset.
+        """
+        answer_y = y
 
         for q_no in range(first_q, last_q + 1):
-            # Bubbles are drawn from center, so subtract the other half later
-            question_y -= question_height / 2
+            answer_y -= question_height / 2
             # 1mm offset to align number with bubble
             c.setFont("Helvetica", 10)
-            c.drawString(x, question_y - 1 * mm, f"{q_no}.")
+            c.drawString(x, answer_y - 1 * mm, f"{q_no}.")
+
+            if self.debug:
+                self._draw_debug_box(c, x, answer_y - question_height / 2,
+                                     question_number_width - choice_width / 2, question_height)
 
             # Draw bubbles
             for choice_no in range(choices_per_question):
                 # Calculate bubble position
                 choice_x = x + question_number_width + (choice_no * choice_width)
-
-                # Draw the bubble
-                c.circle(choice_x, question_y, self.bubble_radius, stroke=1, fill=0)
-
-                # Draw the choice letter inside the bubble
+                # Draw bubble and letter
+                c.circle(choice_x, answer_y, self.bubble_radius, stroke=1, fill=0)
                 letter = choices[choice_no]
-                self._draw_centered_letter(c, letter, choice_x, question_y)
+                self._draw_centered_letter(c, letter, choice_x, answer_y)
 
-            question_y -= question_height / 2
+                if self.debug:
+                    self._draw_debug_box(c, choice_x - choice_width / 2, answer_y - question_height / 2,
+                                         choice_width, question_height)
+
+            answer_y -= question_height / 2
 
     def _draw_horizontal_line(self, c: canvas, y_position: float) -> None:
         """Draw a straight line, account for margin."""
@@ -354,7 +367,7 @@ class AnswerSheetGenerator:
         """Draw alignment markers in the corners for easier scanning."""
         offset = self.margin + self.marker_size
 
-        # Draw markers in each corner
+        # Draw markers in each corner: top-left, top-right, bot-left, bot-right
         c.rect(self.margin, self.page_height - offset, self.marker_size, self.marker_size, fill=1)
         c.rect(self.page_width - offset, self.page_height - offset, self.marker_size, self.marker_size, fill=1)
         c.rect(self.margin, self.margin, self.marker_size, self.marker_size, fill=1)
