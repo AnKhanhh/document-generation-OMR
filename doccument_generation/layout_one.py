@@ -149,7 +149,7 @@ class AnswerSheetGenerator:
         if label:
             c.setFillColor(colors.red)
             c.setFont("Helvetica", 8)
-            c.drawString(x, y + height + 2 * mm, label)
+            c.drawString(x, y + height + 1 * mm, label)
         c.restoreState()
 
     def _draw_barcode(self, c: canvas, sheet_id: str, y_start: float) -> None:
@@ -158,8 +158,8 @@ class AnswerSheetGenerator:
         qr_size = 4 * cm
         qr_x = self.page_width - self.margin - qr_size
 
-        # Create QR code
-        qr_code = qr.QrCodeWidget(sheet_id)
+        # Create QR code, high correction for better OMR
+        qr_code = qr.QrCodeWidget(value=sheet_id, barLevel='H')
         bounds = qr_code.getBounds()
         width = bounds[2] - bounds[0]
         height = bounds[3] - bounds[1]
@@ -176,7 +176,7 @@ class AnswerSheetGenerator:
             c.setFont("Helvetica-Bold", 12)
             c.drawCentredString(qr_x + qr_size / 2, y_start, "SHEET ID")
             c.rotate(90)
-            c.setFont("Helvetica", 8)
+            c.setFont("Helvetica", 10)
             c.drawString(y_start - 5 * cm, - self.page_width + 5 * mm, f"ID: {sheet_id}")
             c.restoreState()
 
@@ -201,8 +201,14 @@ class AnswerSheetGenerator:
         group_y_gap = self.answer_group_top_margin
 
         # 3.Calculate layout limits, recalibrate parameters to fit
+
+        if choices_per_question > 26:
+            print("Warning: not enough letters, limiting to 26 choices")
+            choices_per_question = 26
+
         # Calibrate width
-        if (max_groups_allowed_per_row := int(available_width / group_width)) < 1:
+        max_groups_allowed_per_row = int(available_width / group_width)
+        if max_groups_allowed_per_row < 1:
             choices_per_question = int((available_width - question_number_width) / choice_width)
             print(f"Warning: insufficient width, limiting to {choices_per_question} choices per questions")
 
@@ -218,14 +224,23 @@ class AnswerSheetGenerator:
         # Calibrate height
         # noinspection PyUnusedLocal
         # If not enough vertical space, fit as many answer groups as possible
-        if (total_height_needed := (num_group_row * (group_height + group_y_gap)) + answer_section_label_height) > available_height:
+        total_height_needed = (num_group_row * (group_height + group_y_gap)) + answer_section_label_height
+        if total_height_needed > available_height:
             # Recalculate metrics based on limitations
             num_group_row = int((available_height - answer_section_label_height) / (group_height + group_y_gap))
-            total_height_needed = (num_group_row * (group_height + group_y_gap)) + answer_section_label_height
+            # If cannot fit a single group, reduce number of questions per group
+            if num_group_row < 1:
+                questions_per_group = int(
+                    (available_height - answer_section_label_height - group_y_gap - self.answer_group_label_height)
+                    / self.question_height)
+                num_group_row = 1
+                group_height = (self.question_height * questions_per_group) + self.answer_group_label_height
+
+                print(f"Warning: significant height constraint, limiting to {questions_per_group} questions per group.")
             num_group = num_group_row * max_groups_allowed_per_row
             num_questions = num_group * questions_per_group
-            group_distribution_on_rows: list[int] = [max_groups_allowed_per_row for _ in range(num_group_row)]
-            print(f"Warning: insufficient length, limiting to {num_questions} questions.")
+            group_distribution_on_rows: list[int] = [max_groups_allowed_per_row] * num_group_row
+            print(f"Warning: insufficient height, limiting to {num_questions} questions.")
 
             total_height_needed = (num_group_row * (group_height + group_y_gap)) + answer_section_label_height
             assert total_height_needed <= available_height, "answer section height calibration failed"
@@ -254,10 +269,8 @@ class AnswerSheetGenerator:
         c.drawString(self.margin, y_start, "ANSWER SECTION")
 
         # Answer group horizontal margin is static across rows, for better OMR
-        if (groups_on_row := group_distribution_on_rows[0]) > 1:
-            group_x_gap = (available_width - (groups_on_row * group_width)) / (groups_on_row - 1)
-        else:
-            group_x_gap = 0
+        groups_on_row = group_distribution_on_rows[0]
+        group_x_gap = (available_width - (groups_on_row * group_width)) / max(groups_on_row - 1, 1)
 
         # 4.Draw answer groups, row by row
         current_group = 0

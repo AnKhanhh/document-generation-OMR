@@ -7,13 +7,15 @@ if __name__ == "__main__":
     debug = False
     generator = AnswerSheetGenerator(debug=debug)
     d_generator = AnswerSheetGenerator()
-    num_questions = 100
+    num_questions = 60
     questions_per_group = 5
     choices_per_question = 4
 
     # Generate a sample answer sheet with 30 questions, 4 choices each
     filepath, sheet_id, metadata = \
-        generator.generate_answer_sheet(num_questions=num_questions, choices_per_question=choices_per_question, questions_per_group=questions_per_group,
+        generator.generate_answer_sheet(num_questions=num_questions,
+                                        choices_per_question=choices_per_question,
+                                        questions_per_group=questions_per_group,
                                         filename="deploy.pdf")
 
     print(f"Generated answer sheet: {filepath}")
