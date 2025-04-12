@@ -30,12 +30,12 @@ class AnswerSheetGenerator:
         self.section_label_height = 0.5 * cm
 
         # Answer section layout constants
-        self.bubble_radius = 3 * mm
-        self.bubble_horizontal_space = 10 * mm
+        self.bubble_radius = 0.3 * cm
+        self.bubble_horizontal_space = 1 * cm
         self.answer_group_top_margin = 0.4 * cm
         self.answer_group_label_height = 0.5 * cm
         self.question_height = 0.8 * cm
-        self.question_number_label_width = 1.2 * cm
+        self.question_number_label_width = 0.8 * cm
 
         # Visual settings
         self.debug = debug
@@ -228,7 +228,7 @@ class AnswerSheetGenerator:
         if total_height_needed > available_height:
             # Recalculate metrics based on limitations
             num_group_row = int((available_height - answer_section_label_height) / (group_height + group_y_gap))
-            # If cannot fit a single group, reduce number of questions per group
+            # If group height go past limit, reduce number of questions per group
             if num_group_row < 1:
                 questions_per_group = int(
                     (available_height - answer_section_label_height - group_y_gap - self.answer_group_label_height)
@@ -252,11 +252,56 @@ class AnswerSheetGenerator:
             num_group_row = len(group_distribution_on_rows)
             total_height_needed = (num_group_row * (group_height + group_y_gap)) + answer_section_label_height
 
-        # Calculate section boundaries
+        # 4. Optimize spacing
+        # Assign spare horizontal space
+        for i in range(8):
+            groups_on_row = group_distribution_on_rows[0]
+            minimum_x_space = groups_on_row * group_width
+            group_x_gap = (available_width - minimum_x_space) / max(groups_on_row - 1, 1)
+            # Limit iteration, and prevent skipping recalculation in last loop
+            if i == 7:
+                print("Warning: Cannot optimize horizontal spacing in time")
+                break
+            # If horizontal spacing too large, optimize
+            if group_x_gap / group_width > 0.4 or groups_on_row == 1:
+                # If there is enough space, each row has 1 more group
+                if (group_x_gap * (groups_on_row - 1) > group_width * 1.5
+                    and num_group_row > 1
+                    and num_group_row > group_distribution_on_rows[num_group_row - 1]):  # noqa: E129
+                    new_distribution = group_distribution_on_rows[:-1].copy()
+                    new_distribution.sort()
+                    for j in range(group_distribution_on_rows[num_group_row - 1]):
+                        if j > len(new_distribution) - 1:
+                            print("Error while reassigning groups!")
+                            break
+                        new_distribution[j] += 1
+                    group_distribution_on_rows = new_distribution
+                    group_distribution_on_rows.sort(reverse=True)
+                    num_group_row = len(group_distribution_on_rows)
+                    total_height_needed = (num_group_row * (group_height + group_y_gap)) + answer_section_label_height
+                    continue
+                # If not enough space for new group, extend choice_width. gap = 0.3 group width is ideal
+                elif choice_width < 1.5 * self.bubble_horizontal_space:
+                    choice_width += (available_width - (minimum_x_space + group_width * 0.3 * (groups_on_row - 1))) \
+                                    / (groups_on_row * choices_per_question)
+                    choice_width = min(choice_width, self.bubble_horizontal_space * 1.25)
+                    group_width = question_number_width + (choices_per_question * choice_width)
+                    continue
+                else:
+                    break
+            else:
+                break
+
+        # Assign spare vertical space
+        group_y_gap += (available_height - total_height_needed) / num_group_row
+        group_y_gap = min(group_y_gap, self.answer_group_top_margin * 2.5)
+        total_height_needed = (num_group_row * (group_height + group_y_gap)) + answer_section_label_height
+
+        # 5.Draw answer section
+        # Finalize boundary
         section_end_y = max(y_start - total_height_needed, self.margin + self.marker_size)
         section_height = y_start - section_end_y
 
-        # Answer section debug box
         if self.debug:
             self._draw_debug_box(c,
                                  self.margin, section_end_y,
@@ -268,11 +313,7 @@ class AnswerSheetGenerator:
         c.setFont("Helvetica-Bold", 12)
         c.drawString(self.margin, y_start, "ANSWER SECTION")
 
-        # Answer group horizontal margin is static across rows, for better OMR
-        groups_on_row = group_distribution_on_rows[0]
-        group_x_gap = (available_width - (groups_on_row * group_width)) / max(groups_on_row - 1, 1)
-
-        # 4.Draw answer groups, row by row
+        # Draw answer groups by row
         current_group = 0
         for row in range(num_group_row):
             # Add margin on top of each row
@@ -284,6 +325,11 @@ class AnswerSheetGenerator:
             groups_on_row = group_distribution_on_rows[row]
             for col in range(groups_on_row):
                 assert current_group < num_group, "answer group index out of bound"
+                try:
+                    group_x_gap
+                except NameError:
+                    group_x_gap = (available_width - groups_on_row * group_width) / max(groups_on_row - 1, 1)
+                    print("Error while optimizing space")
 
                 group_x = self.margin + (col * (group_width + group_x_gap))
 
@@ -310,8 +356,8 @@ class AnswerSheetGenerator:
 
             y_start -= group_height
 
-        # Calculate final y position
-        final_y = max(section_end_y - 0.5 * cm, self.margin)
+        # Calculate final y position, only for debug
+        final_y = max(section_end_y - 0.5 * cm, self.margin + self.marker_size)
         return final_y
 
     def _draw_question_group(self, c: canvas, x: float, y: float,
@@ -320,7 +366,7 @@ class AnswerSheetGenerator:
                              choice_width: float, choices_per_question: int, choices: str) -> None:
         """
         Draw a group of questions with answer bubbles.
-        Reportlab bubbles are drawn from center, code needs to accommodate that offset.
+        Unlike other Reportlab elements, bubbles are drawn from center, code needs to accommodate that.
         """
         answer_y = y
 
@@ -332,12 +378,12 @@ class AnswerSheetGenerator:
 
             if self.debug:
                 self._draw_debug_box(c, x, answer_y - question_height / 2,
-                                     question_number_width - choice_width / 2, question_height)
+                                     question_number_width, question_height)
 
             # Draw bubbles
             for choice_no in range(choices_per_question):
                 # Calculate bubble position
-                choice_x = x + question_number_width + (choice_no * choice_width)
+                choice_x = x + question_number_width + ((choice_no + 0.5) * choice_width)
                 # Draw bubble and letter
                 c.circle(choice_x, answer_y, self.bubble_radius, stroke=1, fill=0)
                 letter = choices[choice_no]
