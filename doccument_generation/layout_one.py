@@ -1,4 +1,7 @@
 import os
+import random
+
+import numpy as np
 import uuid
 from datetime import datetime
 from typing import Tuple, Dict, Any
@@ -10,6 +13,8 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm, cm
 from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 
 class AnswerSheetGenerator:
@@ -17,7 +22,8 @@ class AnswerSheetGenerator:
     Generator of multiple-choice answer sheets with dynamic layouts.
     """
 
-    def __init__(self, output_dir="out/pdf", debug=True):
+    # noinspection SpellCheckingInspection
+    def __init__(self, output_dir="out/pdf", debug=False, fill_in=False):
         """Initialize generator with default settings."""
         # Page dimensions
         self.page_width, self.page_height = A4
@@ -37,12 +43,18 @@ class AnswerSheetGenerator:
         self.question_height = 0.8 * cm
         self.question_number_label_width = 0.8 * cm
 
-        # Visual settings
+        # Configuration
+        self.fill_in = fill_in
         self.debug = debug
         self.output_dir = output_dir
 
-        # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
+        pdfmetrics.registerFont(TTFont('kindergarten', 'resources/font/kindergarten.ttf'))
+        pdfmetrics.registerFont(TTFont('Cursive-standard', 'resources/font/Cursive-standard.ttf'))
+        pdfmetrics.registerFont(TTFont('Cursive-standard-Bold', 'resources/font/Cursive-standard-Bold.ttf'))
+        pdfmetrics.registerFont(TTFont('AnthonioScript', 'resources/font/AnthonioScript.ttf'))
+        self.bubble_fill_size = self.bubble_radius * np.random.uniform(0.8, 1.05)
+        self.fill_font = np.random.choice(["kindergarten", "Cursive-standard", "Cursive-standard-Bold", "AnthonioScript", "Helvetica"])
 
     def generate_answer_sheet(self,
                               num_questions: int = 30,
@@ -125,12 +137,29 @@ class AnswerSheetGenerator:
             c.setFont("Helvetica-Bold", 10)
             c.drawString(self.margin, y_pos, label)
             c.rect(self.margin + field_label_width, y_pos - 2 * mm, field_width, field_height)
-            return y_pos - field_spacing
+
+        def fill_field(text, y_pos):
+            c.saveState()
+            c.setFillColor(colors.blue)
+            c.setFont(self.fill_font, np.random.randint(10, 20))
+            c.drawString(self.margin + field_label_width + np.random.uniform(0.25, 4.5) * cm,
+                         y_pos + np.random.randint(-2, 1) * mm,
+                         f"{text}")
+            c.restoreState()
 
         # Draw each field
-        y_start = draw_field("Student ID:", y_start)
-        y_start = draw_field("Class:", y_start)
-        y_start = draw_field("Location:", y_start)
+        draw_field("Student ID:", y_start)
+        if self.fill_in:
+            fill_field("20XX YYYY", y_start)
+        y_start -= field_spacing
+        draw_field("Class:", y_start)
+        if self.fill_in:
+            fill_field(f"IT-T{np.random.randint(1, 18)}", y_start)
+        y_start -= field_spacing
+        draw_field("Location:", y_start)
+        if self.fill_in:
+            fill_field(f"{np.random.choice(list('BCD'))}{np.random.randint(2, 9)}-{np.random.randint(100, 999)}, HUST", y_start)
+        y_start -= field_spacing
 
         # Draw horizontal line
         c.setStrokeColor(colors.black)
@@ -140,7 +169,7 @@ class AnswerSheetGenerator:
 
     def _draw_debug_box(self, c: canvas, x: float, y: float, width: float, height: float, label: str = None) -> None:
         """Draw a debug bounding box, label optional."""
-        assert self.debug, "debug function evoked unintentionally"
+        assert self.debug, "debug function invoked unintentionally"
 
         c.saveState()
         c.setStrokeColor(colors.red)
@@ -167,7 +196,7 @@ class AnswerSheetGenerator:
         # Draw QR code
         d = Drawing(qr_size, qr_size, transform=[qr_size / width, 0, 0, qr_size / height, 0, 0])
         d.add(qr_code)
-        renderPDF.draw(d, c, qr_x, y_start - qr_size)
+        renderPDF.draw(d, c, qr_x, y_start - qr_size - 0.5 * cm)
 
         # When debug, draw label and ID string
         if self.debug:
@@ -340,6 +369,9 @@ class AnswerSheetGenerator:
                 if self.debug:
                     self._draw_debug_box(c, group_x, row_top_y - group_height, group_width, group_height,
                                          f"Group {current_group + 1} Box")
+                else:
+                    c.rect(group_x, row_top_y - group_height,
+                           group_width, group_height - self.answer_group_label_height)  # answer box aid OMR
 
                 # Draw group header, offset to add space at bottom
                 c.setFont("Helvetica-Bold", 10)
@@ -374,13 +406,25 @@ class AnswerSheetGenerator:
             answer_y -= question_height / 2
             # 1mm offset to align number with bubble
             c.setFont("Helvetica", 10)
-            c.drawString(x, answer_y - 1 * mm, f"{q_no}.")
+            c.drawString(x + 1 * mm, answer_y - 1 * mm, f"{q_no}.")
 
             if self.debug:
                 self._draw_debug_box(c, x, answer_y - question_height / 2,
                                      question_number_width, question_height)
 
+            # Use normal distribution to select bubbles
+            def generate_answer() -> list[int]:
+                num_selections = round(max(0, min(choices_per_question - 1, np.random.normal(1, 0.65))))
+                if num_selections == 0:
+                    return []
+                else:
+                    return np.random.choice(range(0, choices_per_question), size=num_selections, replace=False)
+
             # Draw bubbles
+            selections = []
+            if self.fill_in:
+                selections = generate_answer()
+
             for choice_no in range(choices_per_question):
                 # Calculate bubble position
                 choice_x = x + question_number_width + ((choice_no + 0.5) * choice_width)
@@ -388,6 +432,12 @@ class AnswerSheetGenerator:
                 c.circle(choice_x, answer_y, self.bubble_radius, stroke=1, fill=0)
                 letter = choices[choice_no]
                 self._draw_centered_letter(c, letter, choice_x, answer_y)
+
+                if self.fill_in and choice_no in selections:
+                    c.circle(choice_x + np.random.uniform(0, 0.2) * self.bubble_fill_size,
+                             answer_y + np.random.uniform(0, 0.2) * self.bubble_fill_size,
+                             self.bubble_fill_size,
+                             stroke=1, fill=1)
 
                 if self.debug:
                     self._draw_debug_box(c, choice_x - choice_width / 2, answer_y - question_height / 2,
