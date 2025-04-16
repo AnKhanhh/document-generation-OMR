@@ -1,20 +1,18 @@
 import os
-import random
-
-import numpy as np
 import uuid
 from datetime import datetime
 from typing import Tuple, Dict, Any
 
+import numpy as np
 from reportlab.graphics import renderPDF
 from reportlab.graphics.barcode import qr
 from reportlab.graphics.shapes import Drawing
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm, cm
-from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfgen import canvas
 
 
 class AnswerSheetGenerator:
@@ -63,11 +61,14 @@ class AnswerSheetGenerator:
                               sheet_id: str = None,
                               filename: str = None) -> Tuple[str, str, Dict[str, Any]]:
         """Generate answer sheet. Returns filepath, sheet_id, custom metadata"""
-        # Generate unique ID and filename if not provided
+        # Input validation and initialization
         sheet_id = sheet_id or str(uuid.uuid4())
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = filename or f"answer_sheet_{timestamp}.pdf"
         filepath = os.path.join(self.output_dir, filename)
+        num_questions = max(1, num_questions)                                   # 1 <= question
+        choices_per_question = max(2, min(26, choices_per_question))            # 2 <= choices <= 26
+        questions_per_group = max(1, min(num_questions, questions_per_group))   # 1 <= q_per_g <= total_q
 
         # Create canvas and set metadata
         c = canvas.Canvas(filepath, pagesize=A4)
@@ -230,11 +231,6 @@ class AnswerSheetGenerator:
         group_y_gap = self.answer_group_top_margin
 
         # 3.Calculate layout limits, recalibrate parameters to fit
-
-        if choices_per_question > 26:
-            print("Warning: not enough letters, limiting to 26 choices")
-            choices_per_question = 26
-
         # Calibrate width
         max_groups_allowed_per_row = int(available_width / group_width)
         if max_groups_allowed_per_row < 1:
@@ -283,13 +279,13 @@ class AnswerSheetGenerator:
 
         # 4. Optimize spacing
         # Assign spare horizontal space
-        for i in range(8):
+        for i in range(10):
             groups_on_row = group_distribution_on_rows[0]
             minimum_x_space = groups_on_row * group_width
             group_x_gap = (available_width - minimum_x_space) / max(groups_on_row - 1, 1)
             # Limit iteration, and prevent skipping recalculation in last loop
-            if i == 7:
-                print("Warning: Cannot optimize horizontal spacing in time")
+            if i == 9:
+                print("Need more time to optimizing horizontal spacing, moving to next step...")
                 break
             # If horizontal spacing too large, optimize
             if group_x_gap / group_width > 0.4 or groups_on_row == 1:
@@ -370,8 +366,8 @@ class AnswerSheetGenerator:
                     self._draw_debug_box(c, group_x, row_top_y - group_height, group_width, group_height,
                                          f"Group {current_group + 1} Box")
                 else:
-                    c.rect(group_x, row_top_y - group_height,
-                           group_width, group_height - self.answer_group_label_height)  # answer box aid OMR
+                    c.rect(group_x + self.question_number_label_width, row_top_y - group_height,
+                           group_width - question_number_width, group_height - self.answer_group_label_height)  # answer box aid OMR
 
                 # Draw group header, offset to add space at bottom
                 c.setFont("Helvetica-Bold", 10)
