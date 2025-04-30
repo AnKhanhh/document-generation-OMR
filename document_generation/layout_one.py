@@ -2,8 +2,9 @@ import os
 import uuid
 from datetime import datetime
 from typing import Tuple, Dict, Any
-
+import cv2
 import numpy as np
+
 from reportlab.graphics import renderPDF
 from reportlab.graphics.barcode import qr
 from reportlab.graphics.shapes import Drawing
@@ -83,25 +84,25 @@ class AnswerSheetGenerator:
             "filename": filename
         }
 
-        # Draw all sheet components in sequence
+        # Draw all components in sequence
         self._draw_alignment_markers(c)
         header_y = self._draw_header(c)
         form_region_y = self._draw_form_fields(c, header_y)
         self._draw_barcode(c, sheet_id, header_y)
         self._draw_answer_section(c, num_questions, choices_per_question, questions_per_group, form_region_y)
 
-        # Save the canvas
+        # Save canvas
         c.save()
 
         return filepath, sheet_id, metadata
 
     def _draw_header(self, c: canvas) -> float:
         """Draw the header of the answer sheet."""
-        # Main title
+        # Title
         c.setFont("Helvetica-Bold", 16)
         c.drawCentredString(self.page_width / 2, self.page_height - self.header_margin, "ANSWER SHEET")
 
-        # Instructions or debug message
+        # Instruction string
         c.setFont("Helvetica", 10)
         if self.debug:
             c.saveState()
@@ -122,7 +123,7 @@ class AnswerSheetGenerator:
         """Draw the information fields"""
         # Section header
         y_start -= self.section_label_height
-        c.setFont("Helvetica-Bold", 12)
+        c.setFont("Helvetica-Bold", 14)
         c.drawString(self.margin, y_start, "INFORMATION FIELDS")
 
         y_start -= 1 * cm
@@ -135,7 +136,7 @@ class AnswerSheetGenerator:
 
         # Common field drawing function
         def draw_field(label, y_pos):
-            c.setFont("Helvetica-Bold", 10)
+            c.setFont("Helvetica-Bold", 12)
             c.drawString(self.margin, y_pos, label)
             c.rect(self.margin + field_label_width, y_pos - 2 * mm, field_width, field_height)
 
@@ -336,7 +337,7 @@ class AnswerSheetGenerator:
 
         # Draw section label
         y_start -= answer_section_label_height
-        c.setFont("Helvetica-Bold", 12)
+        c.setFont("Helvetica-Bold", 14)
         c.drawString(self.margin, y_start, "ANSWER SECTION")
 
         # Draw choices lettering
@@ -398,17 +399,18 @@ class AnswerSheetGenerator:
         """
         Draw a group of questions with answer bubbles.
         """
+        c.saveState()
+        c.setLineWidth(1)
         answer_y = y
 
         for q_no in range(first_q, last_q + 1):
             answer_y -= question_height / 2
             # 1mm offset to align number with bubble
-            c.setFont("Helvetica", 10)
+            c.setFont("Helvetica-Bold", 10)
             c.drawString(x + 1 * mm, answer_y - 1 * mm, f"{q_no}.")
 
             if self.debug:
-                self._draw_debug_box(c, x, answer_y - question_height / 2,
-                                     question_number_width, question_height)
+                self._draw_debug_box(c, x, answer_y - question_height / 2, question_number_width, question_height)
 
             # Use normal distribution to select bubbles
             def generate_answer() -> list[int]:
@@ -439,6 +441,7 @@ class AnswerSheetGenerator:
                                          choice_width, question_height)
 
             answer_y -= question_height / 2
+        c.restoreState()
 
     def _draw_horizontal_line(self, c: canvas, y_position: float) -> None:
         """Draw a straight line, account for margin."""
@@ -475,50 +478,36 @@ class AnswerSheetGenerator:
                     if (row + col) % 2 == 0:
                         c.rect(x + col * cell_size, y + row * cell_size, cell_size, cell_size, fill=1, stroke=0)
 
-            # bounding box
-            # c.setStrokeColor(colors.black)
-            # c.setLineWidth(1)
-            # c.rect(x, y, size, size, fill=0, stroke=1)
+        def _draw_aruco(c, x, y, size, marker_id=0, dictionary=cv2.aruco.DICT_4X4_50):
+            """
+            Draw ArUco marker
+            """
+            # Generate marker
+            aruco_dict = cv2.aruco.getPredefinedDictionary(dictionary)
+            marker_img = cv2.aruco.generateImageMarker(aruco_dict, marker_id, 7)
 
-        def _draw_star(c, x, y, size):
-            """Draw 8-point star """
-            center_x = x + size / 2
-            center_y = y + size / 2
-            thickness = size * 0.05
+            # Get dimensions of marker
+            marker_size = marker_img.shape[0]
+            cell_size = size / marker_size
 
-            c.setFillColor(colors.black)
-            c.setStrokeColor(colors.black)
-            c.setLineWidth(size * 0.05)
+            # Draw ArUco square by square
+            c.saveState()
+            for i in range(marker_size):
+                for j in range(marker_size):
+                    if marker_img[i, j] == 0:
+                        # flip y-axis since ReportLab uses bottom-left origin
+                        pos_x = x + j * cell_size
+                        pos_y = y + size - (i + 1) * cell_size
+                        c.setFillColor(colors.black)
+                        c.rect(pos_x, pos_y, cell_size, cell_size, fill=True, stroke=False)
+            c.restoreState()
 
-            # Draw 4 lines
-            c.line(x, center_y, x + size, center_y)  # -
-            c.line(center_x, y, center_x, y + size)  # -
-            c.line(x, y, x + size, y + size)  # /
-            c.line(x + size, y, x, y + size)  # \
-
-            # Bounding box
-            # c.setLineWidth(1)
-            # c.rect(x, y, size, size, fill=0, stroke=1)
-
-        def _draw_cross(c, x, y, size):
-            """Draw cross"""
-            thickness = size * 0.2
-            offset = (size - thickness) / 2
-
-            # Horizontal bar
-            c.setFillColor(colors.black)
-            c.rect(x, y + offset, size, thickness, fill=1, stroke=0)
-            # Vertical bar
-            c.rect(x + offset, y, thickness, size, fill=1, stroke=0)
-
-        # checkerboard in bottom-right
-        _draw_checkerboard(c, page_width - margin - marker_size, margin, marker_size)
-
-        # star in top-left
-        _draw_star(c, margin, page_height - margin - marker_size, marker_size)
-
-        # cross in bottom-left
-        _draw_cross(c, margin, margin, marker_size)
+        # checkerboard in top-left
+        _draw_checkerboard(c, margin, page_height - margin - marker_size, marker_size)
+        # ArUco in bottom
+        _draw_aruco(c, margin, margin, marker_size, marker_id=0)
+        _draw_aruco(c, page_width - margin - marker_size, margin, marker_size, marker_id=1)
+        _draw_aruco(c, page_width - margin - marker_size, page_height - margin - marker_size, marker_size, marker_id=2)
 
     @staticmethod
     def _equal_bin_packing(num_item: int, num_bin: int, bin_cap: int) -> list[int]:
