@@ -467,24 +467,24 @@ class AnswerSheetGenerator:
         marker_size = self.marker_size  # 2 cm
 
         def _draw_checkerboard(c: canvas, x, y, size):
-            """3x3 checkerboard"""
+            """5x5 checkerboard"""
             from reportlab.lib import colors
-            cell_size = size / 3
+            cell_size = size / 5
 
             # Draw pattern
             c.setFillColor(colors.black)
-            for row in range(3):
-                for col in range(3):
+            for row in range(5):
+                for col in range(5):
                     if (row + col) % 2 == 0:
                         c.rect(x + col * cell_size, y + row * cell_size, cell_size, cell_size, fill=1, stroke=0)
 
-        def _draw_aruco(c, x, y, size, marker_id=0, dictionary=cv2.aruco.DICT_4X4_50):
+        def _draw_aruco(c, x, y, size, marker_id=0, dictionary=cv2.aruco.DICT_6X6_250):
             """
             Draw ArUco marker
             """
             # Generate marker
             aruco_dict = cv2.aruco.getPredefinedDictionary(dictionary)
-            marker_img = cv2.aruco.generateImageMarker(aruco_dict, marker_id, 7)
+            marker_img = cv2.aruco.generateImageMarker(aruco_dict, marker_id, 8)
 
             # Get dimensions of marker
             marker_size = marker_img.shape[0]
@@ -502,12 +502,11 @@ class AnswerSheetGenerator:
                         c.rect(pos_x, pos_y, cell_size, cell_size, fill=True, stroke=False)
             c.restoreState()
 
-        # checkerboard in top-left
-        _draw_checkerboard(c, margin, page_height - margin - marker_size, marker_size)
-        # ArUco in bottom
-        _draw_aruco(c, margin, margin, marker_size, marker_id=0)
-        _draw_aruco(c, page_width - margin - marker_size, margin, marker_size, marker_id=1)
-        _draw_aruco(c, page_width - margin - marker_size, page_height - margin - marker_size, marker_size, marker_id=2)
+        # draw ArUco counterclock wise, from top left
+        _draw_aruco(c, margin, page_height - margin - marker_size, marker_size, marker_id=0)
+        _draw_aruco(c, margin, margin, marker_size, marker_id=1)
+        _draw_aruco(c, page_width - margin - marker_size, margin, marker_size, marker_id=2)
+        _draw_aruco(c, page_width - margin - marker_size, page_height - margin - marker_size, marker_size, marker_id=3)
 
     @staticmethod
     def _equal_bin_packing(num_item: int, num_bin: int, bin_cap: int) -> list[int]:
