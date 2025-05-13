@@ -127,49 +127,54 @@ def verify_document_markers(corners, ids, expected_ids):
         marker_centers.append(center)
         marker_corners.append(corner)
 
-    # Verify rectangular arrangement by checking edge lengths
     def distance(p1, p2):
         return np.sqrt(np.sum((p1 - p2) ** 2))
 
-    # Calculate the four edge lengths
+    # Calculate the edge lengths
     edge_lengths = [
         distance(marker_centers[0], marker_centers[1]),  # Top edge
         distance(marker_centers[1], marker_centers[2]),  # Right edge
         distance(marker_centers[2], marker_centers[3]),  # Bottom edge
         distance(marker_centers[3], marker_centers[0])  # Left edge
     ]
-
-    # Calculate the two diagonal lengths
+    # Calculate diagonal lengths
     diagonal1 = distance(marker_centers[0], marker_centers[2])
     diagonal2 = distance(marker_centers[1], marker_centers[3])
 
-    # Check if opposite edges have similar lengths (within 10% tolerance)
+    # Check opposite edge lengths (10% tolerance)
     edges_ok = (abs(edge_lengths[0] - edge_lengths[2]) / max(edge_lengths[0], edge_lengths[2]) < 0.1 and
                 abs(edge_lengths[1] - edge_lengths[3]) / max(edge_lengths[1], edge_lengths[3]) < 0.1)
 
-    # Check if diagonals have similar lengths (within 10% tolerance)
+    # Check diagonal lengths (10% tolerance)
     diagonals_ok = abs(diagonal1 - diagonal2) / max(diagonal1, diagonal2) < 0.1
 
     if edges_ok and diagonals_ok:
         print(f"Marker arrangement verified as rectangular")
-        print(f"Edge lengths: {[round(l, 2) for l in edge_lengths]}")
-        print(f"Diagonal lengths: {round(diagonal1, 2)}, {round(diagonal2, 2)}")
     else:
         print(f"WARNING: Markers don't form a proper rectangle")
-        print(f"Edge lengths: {[round(l, 2) for l in edge_lengths]}")
-        print(f"Diagonal lengths: {round(diagonal1, 2)}, {round(diagonal2, 2)}")
+    print(f"Edge lengths: {[round(float(l), 2) for l in edge_lengths]}")
+    print(f"Diagonal lengths: {round(float(diagonal1), 2)}, {round(float(diagonal2), 2)}")
 
-    # Calculate the inner corners of each marker (toward the center of document)
+    # Calculate offset to be 1/3rd of the margin
+    x_coord = marker_corners[0][0][0]  # top-left marker, top-left corner, x-coord
+    offset = max(10, x_coord / 3)  # offset is either a third of the margi+n, or 10 pixels
+    offset = x_coord - min(x_coord, max(5, x_coord - offset))  # all corners 5 pixels away from boundary
+    # Estimate the corners of inner content with this offset
     inner_corners = []
     for i, corners_array in enumerate(marker_corners):
-        # Get the inner corner depending on marker position
-        if i == 0:  # Top-left marker - bottom-right corner is inner
-            inner_corners.append(corners_array[2])
-        elif i == 1:  # Top-right marker - bottom-left corner is inner
-            inner_corners.append(corners_array[3])
-        elif i == 2:  # Bottom-right marker - top-left corner is inner
-            inner_corners.append(corners_array[0])
-        elif i == 3:  # Bottom-left marker - top-right corner is inner
-            inner_corners.append(corners_array[1])
+        corner_point = None
+        if i == 0:  # Top-left marker - bottom-left corner
+            corner_point = corners_array[3].copy()
+            corner_point[0] -= offset
+        elif i == 1:  # Top-right marker - bottom-right corner
+            corner_point = corners_array[2].copy()
+            corner_point[0] += offset
+        elif i == 2:  # Bottom-right marker - top-right corner
+            corner_point = corners_array[1].copy()
+            corner_point[0] += offset
+        elif i == 3:  # Bottom-left marker - top-left corner
+            corner_point = corners_array[0].copy()
+            corner_point[0] -= offset
+        inner_corners.append(corner_point)
 
     return inner_corners
