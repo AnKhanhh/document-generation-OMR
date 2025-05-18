@@ -2,39 +2,39 @@ import cv2
 import numpy as np
 
 
-class ArUcoDetector:
-    def __init__(self):
-        pass
-        # self.detectorParams = self.initiate_params()
-
-    @staticmethod
-    def high_accuracy_param():
-        # Accuracy-optimized parameters
-        parameters = cv2.aruco.DetectorParameters()
-        # Dense sampling of threshold windows for small markers
-        parameters.adaptiveThreshWinSizeMin = 3
-        parameters.adaptiveThreshWinSizeMax = 15  # default 23, for small markers
-        parameters.adaptiveThreshWinSizeStep = 2  # default 10, for thorough sampling
-        parameters.adaptiveThreshConstant = 6  # Default 7, for subtle contrast
-        # Lower perimeter rates for small markers
-        parameters.minMarkerPerimeterRate = 0.015  # Default 3%, for smaller markers
-        parameters.maxMarkerPerimeterRate = 3.0  # Default 4, conservative upper bound
-        parameters.polygonalApproxAccuracyRate = 0.02  # Higher precision
-        # High-resolution perspective correction
-        parameters.perspectiveRemovePixelPerCell = 12  # Double default for accuracy
-        parameters.perspectiveRemoveIgnoredMarginPerCell = 0.15  # Conservative margin
-        # Stricter error tolerance for clean generated markers
-        parameters.maxErroneousBitsInBorderRate = 0.2  # Lower for cleaner borders
-        parameters.errorCorrectionRate = 0.5  # Stricter pattern matching
-        # Additional accuracy parameters
-        parameters.markerBorderBits = 1  # If using 1-bit border (default)
-        parameters.minOtsuStdDev = 5.0  # Default: 5.0
-        parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX  # Sub-pixel refinement
-        parameters.cornerRefinementWinSize = 5  # Window size for refinement
-        parameters.cornerRefinementMaxIterations = 30  # More iterations for precision
-        parameters.cornerRefinementMinAccuracy = 0.01  # Higher accuracy requirement
-
-        return parameters
+# class ArUcoDetector:
+#     def __init__(self):
+#         pass
+#         self.detectorParams = self.initiate_params()
+#
+#     @staticmethod
+#     def high_accuracy_param():
+#         # Accuracy-optimized parameters
+#         parameters = cv2.aruco.DetectorParameters()
+#         # Dense sampling of threshold windows for small markers
+#         parameters.adaptiveThreshWinSizeMin = 3
+#         parameters.adaptiveThreshWinSizeMax = 15  # default 23, for small markers
+#         parameters.adaptiveThreshWinSizeStep = 2  # default 10, for thorough sampling
+#         parameters.adaptiveThreshConstant = 6  # Default 7, for subtle contrast
+#         # Lower perimeter rates for small markers
+#         parameters.minMarkerPerimeterRate = 0.015  # Default 3%, for smaller markers
+#         parameters.maxMarkerPerimeterRate = 3.0  # Default 4, conservative upper bound
+#         parameters.polygonalApproxAccuracyRate = 0.02  # Higher precision
+#         # High-resolution perspective correction
+#         parameters.perspectiveRemovePixelPerCell = 12  # Double default for accuracy
+#         parameters.perspectiveRemoveIgnoredMarginPerCell = 0.15  # Conservative margin
+#         # Stricter error tolerance for clean generated markers
+#         parameters.maxErroneousBitsInBorderRate = 0.2  # Lower for cleaner borders
+#         parameters.errorCorrectionRate = 0.5  # Stricter pattern matching
+#         # Additional accuracy parameters
+#         parameters.markerBorderBits = 1  # If using 1-bit border (default)
+#         parameters.minOtsuStdDev = 5.0  # Default: 5.0
+#         parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX  # Sub-pixel refinement
+#         parameters.cornerRefinementWinSize = 5  # Window size for refinement
+#         parameters.cornerRefinementMaxIterations = 30  # More iterations for precision
+#         parameters.cornerRefinementMinAccuracy = 0.01  # Higher accuracy requirement
+#
+#         return parameters
 
 
 def detect_aruco_markers(grayscale, aruco_dict, id_list=None, visualize=False):
@@ -178,3 +178,34 @@ def verify_document_markers(corners, ids, expected_ids):
         inner_corners.append(corner_point)
 
     return inner_corners
+
+
+def mean_edge_length(corners):
+    """
+    Calculate the mean length of all edges of all ArUco markers.
+
+    Parameters:
+        corners : List of corners, each element is an array shape (1, 4, 2).
+    Returns:
+        Mean length of all edges of all markers.
+    """
+    all_edges = []
+
+    for i, marker in enumerate(corners):
+        # Get 4 corners
+        pts = marker[0]
+
+        # Calculate edge lengths using vectorized operations
+        edges = np.sqrt(np.sum((pts - np.roll(pts, -1, axis=0)) ** 2, axis=1))
+        all_edges.extend(edges)
+
+    # Calculate overall statistics
+    mean_length = np.mean(all_edges)
+    std_length = np.std(all_edges)
+
+    # Print overall diagnostics
+    print(f"\nCalculating for: {len(corners)} markers, {len(all_edges)} edges")
+    print(f"Mean = {round(mean_length, 2)}, std = {round(std_length, 2)}, "
+          f"CV = {round((std_length / mean_length) * 100, 2)}%")
+
+    return mean_length

@@ -132,7 +132,7 @@ class AnswerSheetGenerator:
         field_height = 0.8 * cm
         field_label_width = 3 * cm
         field_width = 10 * cm
-        field_spacing = 1.25 * cm
+        field_y_spacing = 1.25 * cm
 
         # Common field drawing function
         def draw_field(label, y_pos):
@@ -153,15 +153,15 @@ class AnswerSheetGenerator:
         draw_field("Student ID:", y_start)
         if self.fill_in:
             fill_field("20XX YYYY", y_start)
-        y_start -= field_spacing
+        y_start -= field_y_spacing
         draw_field("Class:", y_start)
         if self.fill_in:
             fill_field(f"IT-T{np.random.randint(1, 18)}", y_start)
-        y_start -= field_spacing
+        y_start -= field_y_spacing
         draw_field("Location:", y_start)
         if self.fill_in:
             fill_field(f"{np.random.choice(list('BCD'))}{np.random.randint(2, 9)}-{np.random.randint(100, 999)}, HUST", y_start)
-        y_start -= (field_spacing - 5 * mm)
+        y_start -= (field_y_spacing - 5 * mm)
 
         # Draw horizontal line
         c.setStrokeColor(colors.black)
