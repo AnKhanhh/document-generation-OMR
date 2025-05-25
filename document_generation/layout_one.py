@@ -22,7 +22,7 @@ class AnswerSheetGenerator:
     """
 
     # noinspection SpellCheckingInspection
-    def __init__(self, output_dir="out/pdf", debug=False, fill_in=False):
+    def __init__(self, output_dir="out/pdf", debug=False, fill_in=False, save_metrics=True):
         """Initialize generator with default settings."""
         # Page dimensions
         self.page_width, self.page_height = A4
@@ -43,8 +43,9 @@ class AnswerSheetGenerator:
         self.lettering_height = 0.4 * cm
 
         # Configuration
-        self.fill_in = fill_in
         self.debug = debug
+        self.fill_in = fill_in
+        self.save_metrics = save_metrics
         self.output_dir = output_dir
 
         os.makedirs(output_dir, exist_ok=True)
@@ -80,7 +81,6 @@ class AnswerSheetGenerator:
             "sheet_id": sheet_id,
             "num_questions": num_questions,
             "choices_per_question": choices_per_question,
-            "created_at": datetime.now().isoformat(),
             "filename": filename
         }
 
