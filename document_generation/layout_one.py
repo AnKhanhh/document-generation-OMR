@@ -38,9 +38,9 @@ class AnswerSheetGenerator:
         self.bubble_radius = 0.3 * cm
         self.bubble_horizontal_space = 1 * cm
         self.answer_group_top_margin = 0.3 * cm
-        self.question_height = 0.8 * cm
+        self.question_height = 1 * cm
         self.question_number_label_width = 0.8 * cm
-        self.lettering_height = 0.5 * cm
+        self.lettering_height = 0.4 * cm
 
         # Configuration
         self.fill_in = fill_in
@@ -219,7 +219,7 @@ class AnswerSheetGenerator:
         Some values are defined in build time, but can be overwritten at run time dynamically
         """
         # 1.Define basic dimensions for answer section
-        available_height = y_start - (self.margin + self.marker_size + 0.3 * cm)  # 3 mm margin for alignment marking
+        available_height = y_start - (self.margin + self.marker_size + 0.2 * cm)  # 2mm padding from alignment marks
         available_width = self.page_width - 2 * self.margin
         answer_section_label_height = self.section_label_height
         alphabet_str = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -446,18 +446,6 @@ class AnswerSheetGenerator:
     def _draw_horizontal_line(self, c: canvas, y_position: float) -> None:
         """Draw a straight line, account for margin."""
         c.line(self.margin, y_position, self.page_width - self.margin, y_position)
-
-    @staticmethod
-    def draw_horizontal_dashed_line(self, c: canvas, x_start, x_end, y: float, width=1, color=colors.red):
-        """Draw a horizontal dashed line"""
-        c.saveState()
-
-        c.setLineWidth(width)
-        c.setStrokeColor(color)
-        c.setDash([4 * mm, 4 * mm])
-        c.line(x_start, y, x_end, y)
-
-        c.restoreState()
 
     # noinspection SpellCheckingInspection
     def _draw_alignment_markers(self, c: canvas) -> None:
