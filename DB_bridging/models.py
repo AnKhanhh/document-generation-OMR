@@ -105,13 +105,13 @@ class DynamicMetrics(models.Model):
 
     # Instance-specific metrics
     question_height = models.IntegerField(null=True, blank=True)
-    question_width = models.IntegerField(null=True, blank=True)
+    choice_width = models.IntegerField(null=True, blank=True)
     group_y_spacing = models.IntegerField(null=True, blank=True)
 
     # Template specifications
     num_questions = models.IntegerField(default=20)
     questions_per_group = models.IntegerField(default=10)
-    answers_per_question = models.IntegerField(default=4)
+    choices_per_question = models.IntegerField(default=4)
 
     class Meta:
         db_table = 'dynamic_metrics'

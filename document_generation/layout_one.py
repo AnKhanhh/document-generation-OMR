@@ -22,7 +22,7 @@ class AnswerSheetGenerator:
     """
 
     # noinspection SpellCheckingInspection
-    def __init__(self, output_dir="out/pdf", debug=False, fill_in=False, save_metrics=True):
+    def __init__(self, output_dir="out/pdf", debug=False, fill_in=False):
         """Initialize generator with default settings."""
         # Page dimensions
         self.page_width, self.page_height = A4
@@ -33,6 +33,7 @@ class AnswerSheetGenerator:
         self.header_line_margin = 2.5 * cm
         self.marker_size = 1.2 * cm
         self.section_label_height = 0.5 * cm
+        self.qr_size = 4 * cm
 
         # Answer section layout constants
         self.bubble_radius = 0.3 * cm
@@ -45,8 +46,19 @@ class AnswerSheetGenerator:
         # Configuration
         self.debug = debug
         self.fill_in = fill_in
-        self.save_metrics = save_metrics
         self.output_dir = output_dir
+
+        # Metrics are initialized and will be updated, generate document at least once to get full metrics
+        from DB_bridging.models import StaticMetrics, DynamicMetrics
+        self.static_metrics = StaticMetrics(
+            template_id="layout_1",
+            page_width=self.page_width,
+            page_height=self.page_height,
+            margin=self.margin,
+            brush_thickness=1,  # implicitly keep thickness=1 throughout this layout
+            qr_size=self.qr_size
+        )
+        self.dynamic_metrics = DynamicMetrics(static_template=self.static_metrics)
 
         os.makedirs(output_dir, exist_ok=True)
         pdfmetrics.registerFont(TTFont('kindergarten', 'resources/font/kindergarten.ttf'))
@@ -61,11 +73,11 @@ class AnswerSheetGenerator:
                               choices_per_question: int = 4,
                               questions_per_group: int = 5,
                               sheet_id: str = None,
-                              filename: str = None) -> Tuple[str, str, Dict[str, Any]]:
+                              filename: str = None) -> Tuple[str, str]:
         """Generate answer sheet. Returns filepath, sheet_id, custom metadata"""
         # Input validation and initialization
         sheet_id = sheet_id or str(uuid.uuid4())
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%M:%H_%d/%m%Y")
         filename = filename or f"answer_sheet_{timestamp}.pdf"
         filepath = os.path.join(self.output_dir, filename)
         num_questions = max(1, num_questions)  # 1 <= question
@@ -74,15 +86,7 @@ class AnswerSheetGenerator:
 
         # Create canvas and set metadata
         c = canvas.Canvas(filepath, pagesize=A4)
-        c.setTitle(datetime.now().strftime("%Y/%m/%d_%H:%M"))
-
-        # Sheet metadata
-        metadata = {
-            "sheet_id": sheet_id,
-            "num_questions": num_questions,
-            "choices_per_question": choices_per_question,
-            "filename": filename
-        }
+        c.setTitle(timestamp)
 
         # Draw all components in sequence
         self._draw_alignment_markers(c)
@@ -90,11 +94,11 @@ class AnswerSheetGenerator:
         form_region_y = self._draw_form_fields(c, header_y)
         self._draw_barcode(c, sheet_id, header_y)
         self._draw_answer_section(c, num_questions, choices_per_question, questions_per_group, form_region_y)
-
-        # Save canvas
         c.save()
 
-        return filepath, sheet_id, metadata
+        self.dynamic_metrics.instance_id = sheet_id
+
+        return filepath, sheet_id
 
     def _draw_header(self, c: canvas) -> float:
         """Draw the header of the answer sheet."""
@@ -133,6 +137,10 @@ class AnswerSheetGenerator:
         field_label_width = 3 * cm
         field_width = 10 * cm
         field_y_spacing = 1.25 * cm
+
+        self.static_metrics.txt_field_width = field_width
+        self.static_metrics.txt_field_height = field_height
+        self.static_metrics.txt_field_y_spacing = field_y_spacing
 
         # Common field drawing function
         def draw_field(label, y_pos):
@@ -186,7 +194,7 @@ class AnswerSheetGenerator:
     def _draw_barcode(self, c: canvas, sheet_id: str, y_start: float) -> None:
         """Draw sheet_id QR code, right-aligned."""
         # Define QR code basic parameters
-        qr_size = 4 * cm
+        qr_size = self.qr_size
         qr_x = self.page_width - self.margin - qr_size
 
         # Create QR code, high correction for better OMR
@@ -390,6 +398,13 @@ class AnswerSheetGenerator:
         if y_start < (self.margin + self.marker_size):
             print("Unexpected behavior: Answer section drawn out of bound.")
 
+        self.dynamic_metrics.question_height = self.question_height
+        self.dynamic_metrics.choice_width = choice_width
+        self.dynamic_metrics.group_y_spacing = group_y_gap
+        self.dynamic_metrics.num_questions = num_questions
+        self.dynamic_metrics.questions_per_group = questions_per_group
+        self.dynamic_metrics.choices_per_question = choices_per_question
+
         return y_start
 
     def _draw_question_group(self, c: canvas, x: float, y: float,
@@ -495,6 +510,11 @@ class AnswerSheetGenerator:
         _draw_aruco(c, margin, margin, marker_size, marker_id=1)
         _draw_aruco(c, page_width - margin - marker_size, margin, marker_size, marker_id=2)
         _draw_aruco(c, page_width - margin - marker_size, page_height - margin - marker_size, marker_size, marker_id=3)
+
+        self.static_metrics.top_left = 0
+        self.static_metrics.top_right = 3
+        self.static_metrics.bottom_right = 2
+        self.static_metrics.bottom_left = 1
 
     @staticmethod
     def _equal_bin_packing(num_item: int, num_bin: int, bin_cap: int) -> list[int]:

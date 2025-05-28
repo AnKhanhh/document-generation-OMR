@@ -54,9 +54,9 @@ def detect_text_boxes(image, roi_corners, brush_thickness, visualize=False):
     for line in lines:
         x1, y1, x2, y2 = line[0]
         length = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-        # Keep only horizontal lines, 10 degree tolerance
+        # Keep only horizontal lines, 20 degree tolerance
         angle = np.abs(np.arctan2(y2 - y1, x2 - x1) * 180 / np.pi) % 180
-        if angle < 10 or angle > 170:
+        if angle < 20 or angle > 160:
             horizontal_lines.append((x1, y1, x2, y2, length))
 
     # Sort by length ,

@@ -63,8 +63,7 @@ def generate_document(num_questions: int = 60,
 
 
 if __name__ == "__main__":
-    filepath, sheet_id, metadata = generate_document()
+    filepath, sheet_id = generate_document()
 
     print(f"Generated answer sheet: {filepath}")
     print(f"Sheet ID: {sheet_id}")
-    print(f"Metadata: {json.dumps(metadata, indent=2)}")
