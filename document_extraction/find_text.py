@@ -17,20 +17,20 @@ def detect_text_boxes(image, roi_corners, brush_thickness, visualize=False):
     roi_corners = np.array(roi_corners, dtype=np.int32)
     assert len(roi_corners) == 4, "Textbox detection failed: Expected 4 coordinates as input"
 
-    # Initialize visualization images as None
+    # Initialize visualization images
     morph_image = None
     annotated_image = None
 
     # Make sure ROI is a perfect rectangle
     x_min, y_min = np.min(roi_corners, axis=0)
     x_max, y_max = np.max(roi_corners, axis=0)
-    roi_width = x_max - x_min
     roi = image[y_min:y_max, x_min:x_max].copy()
 
-    # Binarize ROI
+    # Binarize
     _, binary_roi = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
     # Morphological opening, keep horizontal lines above half ROI width
+    roi_width = x_max - x_min
     horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (roi_width // 2, 1))
     morph_roi = cv2.morphologyEx(binary_roi, cv2.MORPH_OPEN, horizontal_kernel)
 
@@ -42,24 +42,27 @@ def detect_text_boxes(image, roi_corners, brush_thickness, visualize=False):
             annotated_image = cv2.cvtColor(annotated_image, cv2.COLOR_GRAY2BGR)
 
     # Detect lines
-    lines = cv2.HoughLinesP(morph_roi, rho=1, theta=np.pi / 180, threshold=50, minLineLength=roi_width // 3, maxLineGap=brush_thickness * 2)
+    lines = cv2.HoughLinesP(morph_roi,
+                            rho=1, theta=np.pi / 180, threshold=50,  # Algorithm parameter
+                            minLineLength=roi_width // 3,
+                            maxLineGap=brush_thickness * 3
+                            )
 
     # Check if we found any lines
     if lines is None or len(lines) < 6:
         print(f"Cannot detect text box")
         return [], morph_image, annotated_image
 
-    # Filter lines
+    # Keep only horizontal lines, 20 degree tolerance
     horizontal_lines = []
     for line in lines:
         x1, y1, x2, y2 = line[0]
         length = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-        # Keep only horizontal lines, 20 degree tolerance
         angle = np.abs(np.arctan2(y2 - y1, x2 - x1) * 180 / np.pi) % 180
         if angle < 20 or angle > 160:
             horizontal_lines.append((x1, y1, x2, y2, length))
 
-    # Sort by length ,
+    # Sort by length
     horizontal_lines.sort(key=lambda x: x[4], reverse=True)
     horizontal_lines = horizontal_lines[:min(10, len(horizontal_lines))]
 
@@ -68,11 +71,9 @@ def detect_text_boxes(image, roi_corners, brush_thickness, visualize=False):
         for x1, y1, x2, y2, _ in horizontal_lines:
             cv2.line(morph_image, (x1, y1), (x2, y2), (0, 0, 255), 2)
 
-    # Group lines by y-coordinate
-    y_midpoints = [(y1 + y2) / 2 for x1, y1, x2, y2, _ in horizontal_lines]
     # Sort by y-midpoint
-    sorted_lines = [(horizontal_lines[i], y_midpoints[i])
-                    for i in range(len(horizontal_lines))]
+    y_midpoints = [(y1 + y2) / 2 for x1, y1, x2, y2, _ in horizontal_lines]
+    sorted_lines = [(horizontal_lines[i], y_midpoints[i]) for i in range(len(horizontal_lines))]
     sorted_lines.sort(key=lambda x: x[1])
 
     # Group lines within ( brush_thickness * 2 ) distance

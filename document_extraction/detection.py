@@ -204,8 +204,7 @@ def mean_edge_length(corners):
     std_length = np.std(all_edges)
 
     # Print overall diagnostics
-    print(f"\nCalculating for: {len(corners)} markers, {len(all_edges)} edges")
-    print(f"Mean = {round(mean_length, 2)}, std = {round(std_length, 2)}, "
-          f"CV = {round((std_length / mean_length) * 100, 2)}%")
+    print(f"\nCalculating on {len(corners)} markers, {len(all_edges)} edges")
+    print(f"Marker edge length: Mean = {round(mean_length, 2)} px, std = {round(std_length, 2)} px")
 
     return mean_length

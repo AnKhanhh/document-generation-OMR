@@ -131,13 +131,3 @@ class DatabaseBridge:
     def lookup_static_metrics(template_id: str) -> Optional[StaticMetrics]:
         """Lookup static metrics by template_id"""
         return StaticMetricsService.get_by_id(template_id)
-
-    @staticmethod
-    def update_processing_status(instance_id: str, status: str) -> bool:
-        """Update processing status of dynamic metrics"""
-        dynamic_metrics = DynamicMetricsService.get_by_id(instance_id)
-        if dynamic_metrics:
-            dynamic_metrics.processing_status = status
-            dynamic_metrics.save()
-            return True
-        return False
