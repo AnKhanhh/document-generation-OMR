@@ -17,5 +17,5 @@ class IDGenerator:
                 self._counter = 0
                 self._last_timestamp = timestamp
 
-            # Format: TTTTTTTTTT-CCC (14 chars total )
+            # Format: {seconds since epoch}-{count} (14 chars total)
             return f"{timestamp:010d}{self._counter:03d}"

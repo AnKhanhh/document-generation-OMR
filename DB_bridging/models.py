@@ -13,6 +13,8 @@ class StaticMetrics(models.Model):
     page_height = models.IntegerField(null=True, blank=True)
     margin = models.IntegerField(null=True, blank=True)
     brush_thickness = models.IntegerField(null=True, blank=True)
+    section_label_height = models.IntegerField(null=True, blank=True)
+    choice_lettering_height = models.IntegerField(null=True, blank=True)
 
     # Marker ID (implicitly ArUco)
     top_left = models.IntegerField(null=True, blank=True)
@@ -108,11 +110,15 @@ class DynamicMetrics(models.Model):
     question_height = models.IntegerField(null=True, blank=True)
     choice_width = models.IntegerField(null=True, blank=True)
     group_y_spacing = models.IntegerField(null=True, blank=True)
+    group_x_spacing = models.IntegerField(null=True, blank=True)
 
     # Template specifications
     num_questions = models.IntegerField(default=20)
     questions_per_group = models.IntegerField(default=10)
     choices_per_question = models.IntegerField(default=4)
+
+    # Layout as list of integers
+    layout = models.JSONField(default=list)
 
     class Meta:
         db_table = 'dynamic_metrics'

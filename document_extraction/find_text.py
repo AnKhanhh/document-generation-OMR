@@ -373,7 +373,7 @@ def detect_text_bounding_boxes(text_rois, roi_coordinates, brush_thickness, min_
                 mean_height = sum(comp['h'] for comp in line) / len(line)
 
                 # Dynamic padding based on text height and brush thickness
-                padding_y = max(mean_height * 0.5, brush_thickness * 2)
+                padding_y = max(mean_height * 0.75, int(brush_thickness * 2.5))
                 padding_x = max(mean_height * 0.25, brush_thickness * 2)
 
                 # Apply padding with ROI boundary checks

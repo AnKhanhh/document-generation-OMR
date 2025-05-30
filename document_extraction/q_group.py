@@ -1,11 +1,11 @@
 import cv2
 import numpy as np
 from scipy.spatial.distance import cdist
-from collections import defaultdict
 
 
-def detect_rectangles(image, roi_corners, expected_width, expected_height,
-                      expected_h_spacing, expected_v_spacing, brush_thickness):
+def detect_intersection(image, roi_corners, expected_width, expected_height,
+                        expected_x_spacing, expected_y_spacing, brush_thickness,
+                        num_group):
     """
     Detect rectangles in an image using morphological operations and Hough lines.
     Args:
@@ -13,24 +13,23 @@ def detect_rectangles(image, roi_corners, expected_width, expected_height,
         roi_corners: ROI [top-left, top-right, bottom-right, bottom-left]
         expected_width: Expected rect width (px)
         expected_height: Expected rect height (px)
-        expected_h_spacing: Expected horizontal spacing between rectangles
-        expected_v_spacing: Expected vertical spacing between rectangles
+        expected_x_spacing: Expected horizontal spacing between rectangles
+        expected_y_spacing: Expected vertical spacing between rectangles
         brush_thickness: Line thickness in pixels for clustering
+        num_group: number of question groups to be detected
     Returns:
         List of rectangle coordinates, each as [top-left, top-right, bottom-right, bottom-left]
     """
 
     def cluster_lines(lines, orientation, brush_thickness):
         """
-        Cluster collinear line segments into logical lines.
-
+        Cluster collinear line segments
         Args:
-            lines: Array of line segments from HoughLinesP
-            orientation: 'horizontal' or 'vertical'
-            brush_thickness: Brush thickness for distance threshold
-
+            lines: Array of line segments
+            orientation: 'horizontal'/'vertical'
+            brush_thickness: for distance threshold
         Returns:
-            List of clustered lines, each represented by two endpoints
+            List of clustered lines
         """
         if lines is None or len(lines) == 0:
             return []
@@ -47,18 +46,17 @@ def detect_rectangles(image, roi_corners, expected_width, expected_height,
                 avg_y = (y1 + y2) / 2
                 min_x, max_x = min(x1, x2), max(x1, x2)
                 line_data.append((avg_y, min_x, max_x, y1, y2))
-            else:  # vertical
+            else:
                 # For vertical lines, group by x-coordinate
                 avg_x = (x1 + x2) / 2
                 min_y, max_y = min(y1, y2), max(y1, y2)
                 line_data.append((avg_x, min_y, max_y, x1, x2))
 
-        # Sort by primary coordinate (y for horizontal, x for vertical)
+        # Sort by coordinate (y for horizontal, x for vertical)
         line_data.sort(key=lambda x: x[0])
 
         # Group lines within threshold distance
         current_cluster = [line_data[0]]
-
         for i in range(1, len(line_data)):
             if abs(line_data[i][0] - current_cluster[-1][0]) <= cluster_threshold:
                 current_cluster.append(line_data[i])
@@ -74,8 +72,10 @@ def detect_rectangles(image, roi_corners, expected_width, expected_height,
 
         return clustered_lines
 
+    # noinspection DuplicatedCode
+    # code is duplicated for readability
     def merge_cluster(cluster, orientation):
-        """Merge line segments in a cluster into a single line."""
+        """Merge line segments in a cluster into a single line"""
         if orientation == 'horizontal':
             avg_y = np.mean([line[0] for line in cluster])
             min_x = min([line[1] for line in cluster])
@@ -87,105 +87,133 @@ def detect_rectangles(image, roi_corners, expected_width, expected_height,
             max_y = max([line[2] for line in cluster])
             return [(avg_x, min_y), (avg_x, max_y)]
 
-    # Extract ROI from image
+    # 1. Get bounding ROI
     roi_points = np.array(roi_corners, dtype=np.float32)
-
-    # Get bounding rectangle of ROI
     x, y, w, h = cv2.boundingRect(roi_points.astype(np.int32))
     roi_image = image[y:y + h, x:x + w]
 
-    # Binarize image
+    # 2. Binarize
     _, binary = cv2.threshold(roi_image, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-    # Create morphological kernels
-    # Remove features smaller than 3/4 of expected dimensions
-    h_kernel_width = max(1, int(expected_width * 0.75))
-    h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (h_kernel_width, 1))
+    # 3. Opening morphology
+    # Create kernel to remove features than 3/4 expected dimensions
+    h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (int(expected_width * 0.75), 1))
+    v_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, int(expected_height * 0.75)))
 
-    v_kernel_height = max(1, int(expected_height * 0.75))
-    v_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, v_kernel_height))
-
-    # Extract horizontal and vertical lines
+    # Apply kernel to get lines
     horizontal_lines = cv2.morphologyEx(binary, cv2.MORPH_OPEN, h_kernel)
     vertical_lines = cv2.morphologyEx(binary, cv2.MORPH_OPEN, v_kernel)
 
-    # Detect line segments using Hough transform
-    min_line_length = min(expected_width, expected_height) // 2
-    max_line_gap = max(expected_h_spacing, expected_v_spacing) // 3
+    # Detect line segments
+    h_segments = cv2.HoughLinesP(horizontal_lines, 1, np.pi / 180, threshold=50,
+                                 minLineLength=expected_width // 2,
+                                 maxLineGap=expected_x_spacing // 3)
 
-    h_segments = cv2.HoughLinesP(horizontal_lines, 1, np.pi / 180,
-                                 threshold=50, minLineLength=min_line_length,
-                                 maxLineGap=max_line_gap)
+    v_segments = cv2.HoughLinesP(vertical_lines, 1, np.pi / 180, threshold=50,
+                                 minLineLength=expected_height // 2,
+                                 maxLineGap=expected_y_spacing // 3)
 
-    v_segments = cv2.HoughLinesP(vertical_lines, 1, np.pi / 180,
-                                 threshold=50, minLineLength=min_line_length,
-                                 maxLineGap=max_line_gap)
-
-    # Cluster line segments into logical lines
+    # 4. Cluster line segments
     h_lines = cluster_lines(h_segments, 'horizontal', brush_thickness)
     v_lines = cluster_lines(v_segments, 'vertical', brush_thickness)
 
-    # Find all intersections
-    intersections = []
+    # Result validation
+    if not h_lines or not v_lines:
+        print("Cant detect any lines for q group failed")
+        return []
+    if len(h_lines) * 2 < num_group or len(v_lines) * 2 < num_group:
+        print(f"Detected {len(h_lines)} horizontal/{len(v_lines)} vertical edges, expected {num_group * 2}")
+        return []
+
+    # 5. Find intersections
+    from scipy.optimize import linear_sum_assignment
+
+    # Flatten line endpoints to coordinate list
+    h_points = []
     for h_line in h_lines:
-        for v_line in v_lines:
-            # Calculate intersection point
-            h_y = h_line[0][1]  # y-coordinate of horizontal line
-            v_x = v_line[0][0]  # x-coordinate of vertical line
+        h_points.extend([h_line[0], h_line[1]])
 
-            # Check if intersection is within line segments
-            h_x_min, h_x_max = min(h_line[0][0], h_line[1][0]), max(h_line[0][0], h_line[1][0])
-            v_y_min, v_y_max = min(v_line[0][1], v_line[1][1]), max(v_line[0][1], v_line[1][1])
+    v_points = []
+    for v_line in v_lines:
+        v_points.extend([v_line[0], v_line[1]])
 
-            if h_x_min <= v_x <= h_x_max and v_y_min <= h_y <= v_y_max:
-                intersections.append((v_x + x, h_y + y))  # Convert back to original image coordinates
+    # Create distance matrix
+    distance_matrix = cdist(np.array(h_points), np.array(v_points), 'euclidean')
+    # Find optimal assignment
+    h_indices, v_indices = linear_sum_assignment(distance_matrix)
 
-    # Sort intersections by position (top-left to bottom-right)
-    intersections.sort(key=lambda p: (p[1], p[0]))
+    # Extract matches and compute intersections
+    intersections = []
+    total_distance = 0
+    for h_idx, v_idx in zip(h_indices, v_indices):
+        h_point = h_points[h_idx]
+        v_point = v_points[v_idx]
 
-    # Group intersections into rectangles
+        # Calculate coord in original image
+        intersection_x = (h_point[0] + v_point[0]) / 2
+        intersection_y = (h_point[1] + v_point[1]) / 2
+        intersections.append((intersection_x + x, intersection_y + y))
+
+        # Accumulate distance for debugging
+        total_distance += distance_matrix[h_idx, v_idx]
+
+    # Print debug info
+    mean_distance = total_distance / len(h_indices)
+    print(f"Detected {len(intersections)}/{num_group * 4} expected")
+    print(f"Mean localization accuracy of intersections: {mean_distance:.2f}px")
+
+    return intersections
+
+
+def intersections_to_rectangles(intersections):
+    """
+    Group intersection points into rectangles using closest neighbor approach.
+    Args:
+        intersections: List of intersection coordinates
+    Returns:
+        List of coordinates: [top-left, top-right, bottom-right, bottom-left]
+    """
     rectangles = []
     used_intersections = set()
 
-    for i, intersection in enumerate(intersections):
+    # Sort intersections top-left to bottom-right
+    sorted_intersections = sorted(intersections, key=lambda p: (p[1], p[0]))
+
+    for i, current_point in enumerate(sorted_intersections):
         if i in used_intersections:
             continue
 
-        # Find potential rectangle corners
-        potential_corners = []
+        # Calculate euclidean distances
+        distances = []
+        for j, other_point in enumerate(sorted_intersections):
+            if j != i and j not in used_intersections:
+                dist = np.sqrt((other_point[0] - current_point[0]) ** 2 +
+                               (other_point[1] - current_point[1]) ** 2)
+                distances.append((j, other_point, dist))
 
-        for j, other_intersection in enumerate(intersections):
-            if j == i or j in used_intersections:
-                continue
+        # Sort by distance and take 3 closest
+        distances.sort(key=lambda x: x[2])
+        closest_3 = distances[:3]
 
-            dx = abs(other_intersection[0] - intersection[0])
-            dy = abs(other_intersection[1] - intersection[1])
+        if len(closest_3) == 3:
+            # Form rectangle from current point + 3 closest
+            rect_points = [current_point] + [point[1] for point in closest_3]
+            point_indices = [i] + [point[0] for point in closest_3]
 
-            # Check if distances match expected rectangle dimensions (with tolerance)
-            width_tolerance = expected_width * 0.3
-            height_tolerance = expected_height * 0.3
+            # Sort points in clockwise order from top-left
+            clockwise_points = sort_points_clockwise(rect_points)
+            rectangles.append(clockwise_points)
 
-            if (abs(dx - expected_width) <= width_tolerance and dy <= height_tolerance) or \
-                (abs(dy - expected_height) <= height_tolerance and dx <= width_tolerance):
-                potential_corners.append((j, other_intersection))
-
-        # Try to form rectangles from potential corners
-        if len(potential_corners) >= 3:
-            # Sort potential corners to form a proper rectangle
-            corners_with_indices = [intersection] + [corner[1] for corner in potential_corners[:3]]
-            corner_indices = [i] + [corner[0] for corner in potential_corners[:3]]
-
-            # Sort corners in clockwise order starting from top-left
-            corners_with_indices.sort(key=lambda p: (p[1], p[0]))  # Sort by y, then x
-
-            if len(corners_with_indices) >= 4:
-                # Take first 4 corners and arrange clockwise from top-left
-                sorted_corners = sorted(corners_with_indices[:4], key=lambda p: (p[1], p[0]))
-
-                # Basic rectangle validation
-                if len(sorted_corners) == 4:
-                    rectangles.append(sorted_corners)
-                    for idx in corner_indices[:4]:
-                        used_intersections.add(idx)
+            # Mark points as used
+            for idx in point_indices:
+                used_intersections.add(idx)
 
     return rectangles
+
+
+def sort_points_clockwise(points):
+    """Sort 4 points in clockwise order starting from top-left."""
+    if len(points) != 4:
+        print(f"Warning: trying to sort {len(points)} coordinates, expected 4")
+    sorted_points = sorted(points, key=lambda p: (p[1], p[0]))  # Sort by y, then x
+    return sorted_points

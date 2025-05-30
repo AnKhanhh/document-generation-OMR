@@ -57,7 +57,9 @@ class AnswerSheetGenerator:
             margin=self.margin,
             brush_thickness=1,  # implicitly keep thickness=1 throughout this layout
             qr_size=self.qr_size,
-            marker_size=self.marker_size
+            marker_size=self.marker_size,
+            section_label_height=self.section_label_height,
+            choice_lettering_height=self.lettering_height
         )
         self.dynamic_metrics = DynamicMetrics(static_template=self.static_metrics)
 
@@ -403,9 +405,11 @@ class AnswerSheetGenerator:
         self.dynamic_metrics.question_height = self.question_height
         self.dynamic_metrics.choice_width = choice_width
         self.dynamic_metrics.group_y_spacing = group_y_gap
+        self.dynamic_metrics.group_x_spacing = group_x_gap
         self.dynamic_metrics.num_questions = num_questions
         self.dynamic_metrics.questions_per_group = questions_per_group
         self.dynamic_metrics.choices_per_question = choices_per_question
+        self.dynamic_metrics.layout = group_distribution_on_rows
 
         return y_start
 

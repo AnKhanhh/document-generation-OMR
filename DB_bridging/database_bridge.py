@@ -3,6 +3,7 @@ from typing import Optional, Dict, Any, Tuple
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'DB_bridging.settings')
 import django
+
 django.setup()
 
 from DB_bridging.services import StaticMetricsService, AnswerKeysService, DynamicMetricsService
