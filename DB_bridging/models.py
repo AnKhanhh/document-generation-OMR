@@ -24,6 +24,7 @@ class StaticMetrics(models.Model):
     qr_size = models.IntegerField(null=True, blank=True)
 
     # Text field metrics
+    txt_label_width = models.IntegerField(null=True, blank=True)
     txt_field_width = models.IntegerField(null=True, blank=True)
     txt_field_height = models.IntegerField(null=True, blank=True)
     txt_field_y_spacing = models.IntegerField(null=True, blank=True)

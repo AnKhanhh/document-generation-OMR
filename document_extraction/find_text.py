@@ -310,32 +310,25 @@ def detect_text_bounding_boxes(text_rois, roi_coordinates, brush_thickness, min_
                 'centroid': centroids[i]
             })
 
-        # Group components into text lines based on vertical position
+        # Group components into lines based on y-coord
         if valid_components:
-            # Sort components by y-coordinate
             valid_components.sort(key=lambda c: c['y'])
-
-            # Group by similar y-coordinate (text line detection)
             text_lines = []
             current_line = [valid_components[0]]
             mean_height = valid_components[0]['h']
 
             for comp in valid_components[1:]:
-                # Check if component belongs to current line
                 prev_comp = current_line[-1]
                 y_diff = abs(comp['y'] - prev_comp['y'])
-
-                # If y difference is small enough, add to current line
-                if y_diff < mean_height * 0.7:  # Allow some vertical variation
+                if y_diff < mean_height * 0.7:
+                    # If y difference is small, cluster
                     current_line.append(comp)
-                    # Update mean height
                     mean_height = sum(c['h'] for c in current_line) / len(current_line)
                 else:
                     # Start a new line
                     text_lines.append(current_line)
                     current_line = [comp]
                     mean_height = comp['h']
-
             # Add the last line
             if current_line:
                 text_lines.append(current_line)
@@ -343,7 +336,7 @@ def detect_text_bounding_boxes(text_rois, roi_coordinates, brush_thickness, min_
             # Select the most promising text line for each ROI
             # (Form fields typically contain a single line of text)
             if text_lines:
-                # Score each line based on area, density, centrality, and component count
+                # Score based on area, density, centrality, and component count
                 scored_lines = []
                 for line in text_lines:
                     total_area = sum(comp['area'] for comp in line)
@@ -392,13 +385,13 @@ def detect_text_bounding_boxes(text_rois, roi_coordinates, brush_thickness, min_
                 # Extract text region from ROI
                 text_region = roi[min_y:max_y, min_x:max_x].copy()
 
-                # Calculate coordinates in original image
+                # Calculate coords in original image
                 orig_min_x = roi_x + min_x
                 orig_min_y = roi_y + min_y
                 orig_max_x = roi_x + max_x
                 orig_max_y = roi_y + max_y
 
-                # Create bounding box coordinates [top-left, top-right, bottom-right, bottom-left]
+                # Bounding box coords [top-left, top-right, bottom-right, bottom-left]
                 text_box_coord = [
                     (orig_min_x, orig_min_y),
                     (orig_max_x, orig_min_y),
@@ -410,11 +403,11 @@ def detect_text_bounding_boxes(text_rois, roi_coordinates, brush_thickness, min_
                 text_boxes.append(text_region)
                 text_coords.append(text_box_coord)
 
-                # Potential enhancements (commented out):
+                # Enhancements:
                 # 1. Merge nearby text regions
                 # 2. Split regions with too much space between components
-                # 3. Handle multi-line text detection with consistent indentation
-                # 4. Add language-specific rules (e.g., Latin script characteristics)
+                # 3. Handle multi-line text detection
+                # 4. Add rules based on language characteristics
                 # 5. Implement word segmentation within text lines
 
     return text_boxes, text_coords

@@ -56,7 +56,8 @@ class AnswerSheetGenerator:
             page_height=self.page_height,
             margin=self.margin,
             brush_thickness=1,  # implicitly keep thickness=1 throughout this layout
-            qr_size=self.qr_size
+            qr_size=self.qr_size,
+            marker_size=self.marker_size
         )
         self.dynamic_metrics = DynamicMetrics(static_template=self.static_metrics)
 
@@ -141,6 +142,7 @@ class AnswerSheetGenerator:
         self.static_metrics.txt_field_width = field_width
         self.static_metrics.txt_field_height = field_height
         self.static_metrics.txt_field_y_spacing = field_y_spacing
+        self.static_metrics.txt_label_width = field_label_width
 
         # Common field drawing function
         def draw_field(label, y_pos):

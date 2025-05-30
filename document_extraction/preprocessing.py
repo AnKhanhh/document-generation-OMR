@@ -87,7 +87,7 @@ class DocumentPreprocessor:
         h, mask = cv2.findHomography(points_p, points_t, cv2.RANSAC, 5.0)
         print(f"Homography inliner ratio: {np.sum(mask)} / {len(matches)}")
 
-        # TODO: use DB to pass reportlab metrics instead of static definition
+        # TODO: import static metric from DB
         from reportlab.lib.pagesizes import A4
         page_width, page_height = A4
         marker_width_ratio = 1.2 * cm / page_width
@@ -95,8 +95,8 @@ class DocumentPreprocessor:
         height, width = self.template.shape
         marker_size_target = 80
         marker_size_est = width * marker_width_ratio
-        print(f"ArUco marker estimated to be {marker_size_est} pixels")
         if marker_size_est < marker_size_target:  # upscale if marker size is estimated to be too small
+            print(f"Markers estimated to be {marker_size_est}px, upscaling for detection")
             height *= marker_size_target / marker_size_est
             width *= marker_size_target / marker_size_est
 
