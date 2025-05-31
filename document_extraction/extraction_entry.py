@@ -1,3 +1,4 @@
+import math
 from typing import Dict, List, Any
 
 import cv2
@@ -7,6 +8,7 @@ from document_extraction.preprocessing import DocumentPreprocessor
 import document_extraction.detection as dtc
 import document_extraction.roi as roi
 import document_extraction.find_text as text
+import document_extraction.find_group as group
 from document_extraction.read_qr import parse_qr
 
 
@@ -77,5 +79,28 @@ def extract(input_img, template=None, visualize=False):
         viz['txt1'] = _[0].copy()
         viz['txt2'] = _[1].copy()
         viz['txt3'] = _[2].copy()
+
+    # 6. Use contour detection to detect answer rectangles
+    contours, *_ = group.detect_contours(warped_photo, roi_coords[2], visualize=visualize)
+    if visualize:
+        viz['contour_raw'] = _[0]
+
+    filtered_contours = group.filter_rectangles_geometry(contours)
+
+    num_group = math.ceil(dt_dyn.num_questions / dt_dyn.questions_per_group)
+    num_contour = len(filtered_contours)
+    if num_contour == num_group:
+        print(f"Detected all {num_contour} rectangles")
+    elif num_contour > num_group:
+        rect_width_px = rpl_point_px * dt_dyn.choice_width * dt_dyn.choices_per_question
+        rect_height_px = rpl_point_px * dt_dyn.questions_per_group * dt_dyn.question_height
+        filtered_contours = group.filter_rectangles_metrics(filtered_contours,
+                                                            int(rect_width_px / rect_height_px),
+                                                            int(rect_width_px * rect_height_px),
+                                                            rect_width_px, rect_height_px)
+        num_contour = len(filtered_contours)
+
+    else:
+        print(f"Only detect {num_contour} contours / {num_group} expected")
 
     return viz

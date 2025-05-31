@@ -130,7 +130,7 @@ class AnswerSheetGenerator:
         """Draw the information fields"""
         # Section header
         y_start -= self.section_label_height
-        c.setFont("Helvetica-Bold", 14)
+        c.setFont("Helvetica", 12)
         c.drawString(self.margin, y_start, "INFORMATION FIELDS")
 
         y_start -= 1 * cm
@@ -148,7 +148,7 @@ class AnswerSheetGenerator:
 
         # Common field drawing function
         def draw_field(label, y_pos):
-            c.setFont("Helvetica-Bold", 12)
+            c.setFont("Helvetica", 10)
             c.drawString(self.margin, y_pos, label)
             c.rect(self.margin + field_label_width, y_pos - 2 * mm, field_width, field_height)
 
@@ -349,12 +349,12 @@ class AnswerSheetGenerator:
 
         # Draw section label
         y_start -= answer_section_label_height
-        c.setFont("Helvetica-Bold", 14)
+        c.setFont("Helvetica", 12)
         c.drawString(self.margin, y_start, "ANSWER SECTION")
 
         # Draw choices lettering
         y_start -= lettering_height
-        c.setFont("Helvetica-Bold", 12)
+        c.setFont("Helvetica", 10)
         for column_no in range(num_group_row):
             for choice_no in range(choices_per_question):
                 lettering_x = self.margin + column_no * (group_width + group_x_gap) + question_number_width + (choice_no + 0.5) * choice_width
@@ -427,7 +427,7 @@ class AnswerSheetGenerator:
         for q_no in range(first_q, last_q + 1):
             answer_y -= question_height / 2
             # 1mm offset to align number with bubble
-            c.setFont("Helvetica-Bold", 10)
+            c.setFont("Helvetica", 10)
             c.drawString(x + 1 * mm, answer_y - 1 * mm, f"{q_no}.")
 
             if self.debug:
