@@ -168,7 +168,7 @@ def filter_rectangles_metrics(contours, aspect_ratio, estimated_area,
     return filtered_contours
 
 
-def get_rectangle_corners(contours, roi_points):
+def get_rectangle_corners(contours, roi_points, brush_thickness=2):
     """
     Extract rectangle coordinates from contours and map back to original image
     Parameters:
