@@ -1,3 +1,5 @@
+from typing import List, Tuple
+
 import cv2
 import numpy as np
 
@@ -174,23 +176,168 @@ def get_rectangle_corners(contours, roi_points, brush_thickness=2):
     Parameters:
         contours : List of rectangle contours
         roi_points :ROI coordinates used during detection
+        brush_thickness: Estimated brush thickness (px)
     Returns:
-        List of rectangles, as [top-left, top-right, bottom-right, bottom-left]
+    rectangles : lList of rectangles: [top-left, top-right, bottom-right, bottom-left]
     """
     # Get ROI offset
     roi_points = np.array(roi_points, dtype=np.int32)
     roi_x, roi_y, _, _ = cv2.boundingRect(roi_points)
 
     rectangles = []
+    approx_count = 0
     for cnt in contours:
-        # Get bounding rectangle
-        x, y, w, h = cv2.boundingRect(cnt)
+        peri = cv2.arcLength(cnt, True)
+        approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
 
-        # Convert to corner coordinates and offset to original image
-        top_left = (x + roi_x, y + roi_y)
-        top_right = (x + w + roi_x, y + roi_y)
-        bottom_right = (x + w + roi_x, y + h + roi_y)
-        bottom_left = (x + roi_x, y + h + roi_y)
-        rectangles.append([top_left, top_right, bottom_right, bottom_left])
+        if len(approx) == 4:
+            # if contour approximates to rectangle
+            approx_count += 1
+            corners = approx.reshape(4, 2)
 
+            # Sort x and y coordinates separately
+            x_sorted = np.sort(corners[:, 0])
+            y_sorted = np.sort(corners[:, 1])
+
+            # Calculate edges from mean of coordinates, then crop inward
+            offset = int(brush_thickness * 1.5)
+            left = np.mean(x_sorted[:2]) + offset
+            right = np.mean(x_sorted[2:]) - offset
+            top = np.mean(y_sorted[:2]) + offset
+            bottom = np.mean(y_sorted[2:]) - offset
+
+        else:
+            # Fallback: use bounding rectangle of approx points
+            x, y, w, h = cv2.boundingRect(approx)
+
+            # Calculate edges from bounding box specs, then crop inward
+            offset = int(brush_thickness * 2.5)
+            left = x + offset
+            right = x + w - offset
+            top = y + offset
+            bottom = y + h - offset
+
+        ordered_corners = np.array([
+            [left, top],  # top-left
+            [right, top],  # top-right
+            [right, bottom],  # bottom-right
+            [left, bottom]  # bottom-left
+        ])
+        # Convert to tuples and add ROI offset
+        final_corners = [(int(corner[0] + roi_x), int(corner[1] + roi_y)) for corner in ordered_corners]
+        rectangles.append(final_corners)
+
+    print(f"{approx_count}/{len(rectangles)} contours directly approximated to 4-points polygon")
     return rectangles
+
+
+def get_rect_center(coords):
+    points = np.array(coords).reshape(4, 2)
+    return np.mean(points, axis=0)
+
+
+def clustering_row_sort(rectangles, row_tolerance=20):
+    """
+    Sort rectangles using DBSCAN clustering for rows.
+    Returns List[List[Tuple]] where each nested list is a row.
+    """
+    # Cluster by y-coordinate with DBSCAN
+    centers = np.array([get_rect_center(rect) for rect in rectangles])
+    y_coords = centers[:, 1].reshape(-1, 1)
+
+    from sklearn.cluster import DBSCAN
+    clustering = DBSCAN(eps=row_tolerance, min_samples=1).fit(y_coords)
+
+    # Iterate through all cluster label (row)
+    rows = {}
+    for i, label in enumerate(clustering.labels_):
+        if label not in rows:
+            rows[label] = []
+        rows[label].append((rectangles[i], centers[i]))
+
+    # Sort rows by average y-coordinate, then sort within rows by x-coordinate
+    sorted_rows = sorted(rows.items(), key=lambda x: np.mean([c[1][1] for c in x[1]]))
+
+    result = []
+    for _, row_data in sorted_rows:
+        row_sorted = sorted(row_data, key=lambda x: x[1][0])  # Sort by x-coordinate
+        row_rectangles = [rect for rect, _ in row_sorted]
+        result.append(row_rectangles)
+
+    return result
+
+
+def greedy_row_sort(rectangles, y_tolerance=0):
+    """
+    Enhanced greedy approach with explicit y-tolerance for borderline cases.
+    Returns List[List[Tuple]] where each nested list is a row.
+    """
+    remaining = rectangles.copy()
+    result_rows = []
+
+    while remaining:
+        # Find centroid of all rectangles
+        centroids = [get_rect_center(rect) for rect in remaining]
+
+        # Top-left rectangle has centroid closest to (0,0)
+        distances = [np.linalg.norm(centroid) for centroid in centroids]
+        first_idx = np.argmin(distances)
+        rect_first = remaining[first_idx]
+        first_centroid = centroids[first_idx]
+
+        # If centroid above mean of top-left's centroid and bottom edge, add to row
+        first_points = np.array(rect_first).reshape(4, 2)
+        bottom_left_y = first_points[3, 1]
+        reference_y = (bottom_left_y + first_centroid[1]) / 2
+
+        rects_on_row = [rect_first]
+        indices_to_remove = [first_idx]
+
+        for i, (rect, centroid) in enumerate(zip(remaining, centroids)):
+            if i == first_idx:
+                continue
+            if centroid[1] <= reference_y + y_tolerance:
+                rects_on_row.append(rect)
+                indices_to_remove.append(i)
+
+        # Sort current row by centroid x-coordinate
+        rects_with_centroids = [(rect, get_rect_center(rect)) for rect in rects_on_row]
+        rects_with_centroids.sort(key=lambda x: x[1][0])
+        row_rectangles = [rect for rect, _ in rects_with_centroids]
+
+        # Add this row to results
+        result_rows.append(row_rectangles)
+        # Remove processed rectangles
+        remaining = [rect for i, rect in enumerate(remaining) if i not in indices_to_remove]
+
+    return result_rows
+
+
+def validate_grid_sorting(sorted_rows: List[List[Tuple]], expected_layout: List[int]):
+    """
+    Validate that sorting produces expected grid layout.
+    Args:
+        sorted_rows: result from sorting methods
+        expected_layout: expected row lengths, e.g. [3,3,2]
+    Returns:
+        bool: whether layout matches expectation
+    """
+    # Calculate actual layout
+    actual_layout = [len(row) for row in sorted_rows]
+
+    # Calculate mean y variance across all rows
+    all_y_variances = []
+    for row_idx, row_rects in enumerate(sorted_rows):
+        if len(row_rects) > 1:  # Need at least 2 points for variance
+            row_centroids = [get_rect_center(rect) for rect in row_rects]
+            y_coords = [c[1] for c in row_centroids]
+            y_variance = np.var(y_coords)
+            all_y_variances.append(y_variance)
+
+    mean_y_variance = np.mean(all_y_variances) if all_y_variances else 0
+
+    # Print results
+    print(f"Verifying layout {actual_layout} with expected layout {expected_layout}")
+    print(f"Vertical variance: {mean_y_variance:.3f} px")
+
+    return actual_layout == expected_layout

@@ -92,6 +92,6 @@ if __name__ == "__main__":
     init_result = DatabaseBridge.initialize()
     viz = extraction.extract(photo, template, visualize=True)
 
-    os.makedirs("out/detection", exist_ok=True)
+    os.makedirs("out/vis_detection", exist_ok=True)
     for k, v in viz.items():
-        cv2.imwrite(f"out/detection/{k}.png", v)
+        cv2.imwrite(f"out/vis_detection/{k}.png", v)

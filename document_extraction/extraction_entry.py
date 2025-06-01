@@ -89,9 +89,7 @@ def extract(input_img, template=None, visualize=False):
 
     num_group = math.ceil(dt_dyn.num_questions / dt_dyn.questions_per_group)
     num_contour = len(filtered_contours)
-    if num_contour == num_group:
-        print(f"Detected all {num_contour} rectangles")
-    elif num_contour > num_group:
+    if num_contour > num_group:
         rect_width_px = rpl_point_px * dt_dyn.choice_width * dt_dyn.choices_per_question
         rect_height_px = rpl_point_px * dt_dyn.questions_per_group * dt_dyn.question_height
         filtered_contours = group.filter_rectangles_metrics(filtered_contours,
@@ -100,7 +98,20 @@ def extract(input_img, template=None, visualize=False):
                                                             rect_width_px, rect_height_px)
         num_contour = len(filtered_contours)
 
+    if num_contour == num_group:
+        print(f"Detected all {num_contour} rectangles")
     else:
-        print(f"Only detect {num_contour} contours / {num_group} expected")
+        print(f"Warning: detected {num_contour} rectangles, expected {num_group}")
+
+    # 7. Calculate rectangle coords from contours, match to expected layout
+    rectangles = group.get_rectangle_corners(filtered_contours, roi_coords[2], brush_px)
+    exp_layout = dt_dyn.layout
+
+    layout = group.greedy_row_sort(rectangles)
+    if not group.validate_grid_sorting(layout,exp_layout):
+        print("Cannot sort layout geometrically using DBSCAN...")
+        layout = group.clustering_row_sort(rectangles,exp_layout)
+    if not group.validate_grid_sorting(layout,exp_layout):
+        print("Warning: cannot map rectangles to original layout")
 
     return viz
