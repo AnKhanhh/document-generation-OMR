@@ -5,7 +5,6 @@ import numpy as np
 
 
 # NOTE: for enhanced filtering, calculate rectangle centroid and use Hungarian matching on contour centroid
-
 def detect_contours(image, roi_coords, method='threshold', visualize=False):
     """
     Detect contours within ROI using either thresholding or Canny edge detection.
@@ -236,11 +235,8 @@ def get_rect_center(coords):
     return np.mean(points, axis=0)
 
 
-def clustering_row_sort(rectangles, row_tolerance=20):
-    """
-    Sort rectangles using DBSCAN clustering for rows.
-    Returns List[List[Tuple]] where each nested list is a row.
-    """
+def clustering_row_sort(rectangles, row_tolerance=20) -> List[List[List[Tuple[int, int]]]]:
+    """Use DBSCAN to sort rectangles by coordinates, then cluster them into rows"""
     # Cluster by y-coordinate with DBSCAN
     centers = np.array([get_rect_center(rect) for rect in rectangles])
     y_coords = centers[:, 1].reshape(-1, 1)
@@ -267,11 +263,8 @@ def clustering_row_sort(rectangles, row_tolerance=20):
     return result
 
 
-def greedy_row_sort(rectangles, y_tolerance=0):
-    """
-    Enhanced greedy approach with explicit y-tolerance for borderline cases.
-    Returns List[List[Tuple]] where each nested list is a row.
-    """
+def greedy_row_sort(rectangles, y_tolerance=0) -> List[List[List[Tuple[int, int]]]]:
+    """Use geometric calculation to sort rectangles by coordinates, then cluster them into rows"""
     remaining = rectangles.copy()
     result_rows = []
 
