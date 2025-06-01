@@ -9,6 +9,7 @@ import document_extraction.detection as dtc
 import document_extraction.roi as roi
 import document_extraction.find_text as text
 import document_extraction.find_group as group
+import document_extraction.find_bubble as bubble
 from document_extraction.read_qr import parse_qr
 
 
@@ -113,5 +114,14 @@ def extract(input_img, template=None, visualize=False):
         layout = group.clustering_row_sort(rectangles, exp_layout)
     if not group.validate_grid_sorting(layout, exp_layout):
         print("Warning: cannot map rectangles to original layout")
+
+    student_answers, flagged_rects = bubble.extract_answer(warped_photo, layout,
+                                                           dt_dyn.num_questions,
+                                                           dt_dyn.questions_per_group,
+                                                           dt_dyn.choices_per_question,
+                                                           int(dt_stt.bubble_radius * rpl_point_px))
+    # TODO: implement fallback
+    if len(student_answers) == dt_dyn.num_questions:
+        pass
 
     return viz

@@ -149,11 +149,12 @@ def verify_document_markers(corners, ids, expected_ids):
     diagonals_ok = abs(diagonal1 - diagonal2) / max(diagonal1, diagonal2) < 0.1
 
     if edges_ok and diagonals_ok:
-        print(f"Marker arrangement verified as rectangular")
+        print(f"Marker arrangement qualified as rectangular - tolerance 10%")
     else:
-        print(f"WARNING: Markers don't form a proper rectangle")
-    print(f"Edge lengths: {[round(float(l), 2) for l in edge_lengths]}")
-    print(f"Diagonal lengths: {round(float(diagonal1), 2)}, {round(float(diagonal2), 2)}")
+        print(f"Warning: Markers don't form a proper rectangle - tolerance 10%")
+    print(f"Edge lengths:{float(edge_lengths[0]):.2f}/{float(edge_lengths[2]):.2f},"
+          f"{float(edge_lengths[1]):.2f}/{float(edge_lengths[3]):.2f}")
+    print(f"Diagonal lengths: {float(diagonal1):.2f}/{float(diagonal2):.2f}")
 
     # Calculate offset to be 1/3rd of the margin
     x_coord = marker_corners[0][0][0]  # top-left marker, top-left corner, x-coord

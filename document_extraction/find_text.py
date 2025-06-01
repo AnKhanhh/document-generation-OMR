@@ -15,142 +15,135 @@ def detect_text_boxes(image, roi_corners, brush_thickness, visualize=False):
         If visualize=True, also returns tuple of (morph_image, annotated_image)
     """
     roi_corners = np.array(roi_corners, dtype=np.int32)
-    assert len(roi_corners) == 4, "Textbox detection failed: Expected 4 coordinates as input"
-
-    # Initialize visualization images
-    morph_image = None
-    annotated_image = None
-
-    # Make sure ROI is a perfect rectangle
-    x_min, y_min = np.min(roi_corners, axis=0)
-    x_max, y_max = np.max(roi_corners, axis=0)
-    roi = image[y_min:y_max, x_min:x_max].copy()
+    x_min, y_min = roi_corners.min(axis=0)
+    x_max, y_max = roi_corners.max(axis=0)
+    roi_width = x_max - x_min
+    roi_height = y_max - y_min
+    roi = image[y_min:y_max, x_min:x_max]
 
     # Binarize
-    _, binary_roi = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    _, binary = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
-    # Morphological opening, keep horizontal lines above half ROI width
-    roi_width = x_max - x_min
-    horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (roi_width // 2, 1))
-    morph_roi = cv2.morphologyEx(binary_roi, cv2.MORPH_OPEN, horizontal_kernel)
+    results = []
+    # Try multiple kernel sizes
+    for kernel_factor in [0.7, 0.5, 0.3]:
+        kernel_width = int(roi_width * kernel_factor)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_width, 1))
+        morph = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
 
-    # Create visualization images if requested
-    if visualize:
-        morph_image = cv2.cvtColor(morph_roi, cv2.COLOR_GRAY2BGR)
-        annotated_image = image.copy()
-        if len(image.shape) == 2:  # Convert to BGR if grayscale
-            annotated_image = cv2.cvtColor(annotated_image, cv2.COLOR_GRAY2BGR)
+        # Enhanced line detection with lower threshold
+        lines = cv2.HoughLinesP(morph, 1, np.pi / 180, 30,  # Lower threshold
+                                minLineLength=roi_width // 4,  # Shorter min length
+                                maxLineGap=brush_thickness * 4)  # Larger gap
 
-    # Detect lines
-    lines = cv2.HoughLinesP(morph_roi,
-                            rho=1, theta=np.pi / 180, threshold=50,  # Algorithm parameter
-                            minLineLength=roi_width // 3,
-                            maxLineGap=brush_thickness * 3
-                            )
+        if lines is not None:
+            # Filter for horizontal, 15 degree tolerance
+            h_lines = []
+            for line in lines:
+                x1, y1, x2, y2 = line[0]
+                angle = np.abs(np.degrees(np.arctan2(y2 - y1, x2 - x1))) % 180
+                if angle < 15 or angle > 165:
+                    y_mid = (y1 + y2) / 2
+                    length = np.hypot(x2 - x1, y2 - y1)
+                    h_lines.append((x1, y1, x2, y2, y_mid, length))
 
-    # Check if we found any lines
-    if lines is None or len(lines) < 6:
-        print(f"Cannot detect text box")
-        return [], morph_image, annotated_image
+            results.append((len(h_lines), h_lines, morph, kernel_factor))
 
-    # Keep only horizontal lines, 20 degree tolerance
-    horizontal_lines = []
-    for line in lines:
-        x1, y1, x2, y2 = line[0]
-        length = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-        angle = np.abs(np.arctan2(y2 - y1, x2 - x1) * 180 / np.pi) % 180
-        if angle < 20 or angle > 160:
-            horizontal_lines.append((x1, y1, x2, y2, length))
+    # Select best result (most lines detected)
+    best_count, h_lines, morph, kernel_factor = max(results, key=lambda x: x[0])
+    print(f"Using factor={kernel_factor} for opening kernel, detecting {best_count} horizontal segments")
 
-    # Sort by length
-    horizontal_lines.sort(key=lambda x: x[4], reverse=True)
-    horizontal_lines = horizontal_lines[:min(10, len(horizontal_lines))]
+    # Clustering
+    if len(h_lines) >= 5:
+        y_positions = np.array([line[4] for line in h_lines]).reshape(-1, 1)
 
-    # Draw detected lines on morph image if visualizing
-    if visualize and morph_image is not None:
-        for x1, y1, x2, y2, _ in horizontal_lines:
-            cv2.line(morph_image, (x1, y1), (x2, y2), (0, 0, 255), 2)
+        # Try to find 6 clusters
+        from sklearn.cluster import KMeans
+        n_clusters = min(6, len(h_lines))
+        kmeans = KMeans(n_clusters=n_clusters, random_state=0)
+        labels = kmeans.fit_predict(y_positions)
 
-    # Sort by y-midpoint
-    y_midpoints = [(y1 + y2) / 2 for x1, y1, x2, y2, _ in horizontal_lines]
-    sorted_lines = [(horizontal_lines[i], y_midpoints[i]) for i in range(len(horizontal_lines))]
-    sorted_lines.sort(key=lambda x: x[1])
+        # Get best line from each cluster
+        clustered_lines = []
+        for i in range(n_clusters):
+            cluster_lines = [h_lines[j] for j in range(len(h_lines)) if labels[j] == i]
+            if cluster_lines:
+                best = max(cluster_lines, key=lambda x: x[5])
+                clustered_lines.append(best)
 
-    # Group lines within ( brush_thickness * 2 ) distance
-    groups = []
-    current_group = [sorted_lines[0][0]] if sorted_lines else []
-    current_y = sorted_lines[0][1] if sorted_lines else 0
-    for line, y in sorted_lines[1:]:
-        if abs(y - current_y) <= brush_thickness * 2:
-            # Add to current group
-            current_group.append(line)
-        else:
-            # Start a new group
-            if current_group:
-                groups.append(current_group)
-            current_group = [line]
-            current_y = y
-    # Add the last group if exist
-    if current_group:
-        groups.append(current_group)
+        clustered_lines.sort(key=lambda x: x[4])
 
-    # Take 6 longest horizontal line to create 3 boxes
-    groups.sort(key=lambda g: sum(line[4] for line in g), reverse=True)
-    groups = groups[:min(6, len(groups))]
+        print(f"Clustered into {len(clustered_lines)} line groups")
+        for i, line in enumerate(clustered_lines):
+            print(f"  C #{i+1}: y={line[4]:.2f}, length={line[5]:.2f} px")
 
-    # Sort groups by y-position (top to bottom)
-    groups.sort(key=lambda g: sum(y1 + y2 for x1, y1, x2, y2, _ in g) / (2 * len(g)))
+        # Interpolation fallback
+        if len(clustered_lines) == 5:
+            print("Expected 6, interpolating the missing line...", end=" ")
+            gaps = []
+            for i in range(len(clustered_lines) - 1):
+                gap = clustered_lines[i + 1][4] - clustered_lines[i][4]
+                gaps.append((gap, i))
 
-    # Extract box coordinates from the grouped lines
+            # Find the largest gap (likely missing line)
+            max_gap, idx = max(gaps)
+            avg_gap = sum(g[0] for g in gaps) / len(gaps)
+
+            if max_gap > avg_gap * 1.5:
+                print(f"Detected gap between line #{idx} and #{idx + 1}: {max_gap:.2f} px,"
+                      f" compared to average: {avg_gap:.2f} px")
+
+                # Try focused detection in the gap region
+                y_start = int(clustered_lines[idx][4] + avg_gap * 0.3)
+                y_end = int(clustered_lines[idx + 1][4] - avg_gap * 0.3)
+
+                if y_end > y_start:
+                    gap_roi = morph[y_start:y_end, :]
+                    gap_lines = cv2.HoughLinesP(gap_roi, 1, np.pi / 180, 20,
+                                                minLineLength=roi_width // 5,
+                                                maxLineGap=brush_thickness * 5)
+
+                    if gap_lines is not None and len(gap_lines) > 0:
+                        # Add the detected line
+                        x1, y1, x2, y2 = gap_lines[0][0]
+                        y_mid = (y1 + y2) / 2 + y_start
+                        length = np.hypot(x2 - x1, y2 - y1)
+                        clustered_lines.insert(idx + 1, (x1, y1 + y_start, x2, y2 + y_start, y_mid, length))
+                        print(f"Extrapolation successfully, y={y_mid:.2f}")
+
+        h_lines = clustered_lines
+
+    if len(h_lines) < 6:
+        print(f"Warning: detected {len(h_lines)}/6 lines needed to form text fields")
+        return [], None, None
+
+    # Take first 6 lines, form boxes
+    h_lines = h_lines[:6]
     boxes = []
-    for i in range(0, len(groups), 2):
-        if i + 1 < len(groups):  # Make sure lines have pair
-            top_lines = groups[i]
-            bottom_lines = groups[i + 1]
-            # Use the longest line in each group
-            top_lines.sort(key=lambda line: line[4], reverse=True)
-            bottom_lines.sort(key=lambda line: line[4], reverse=True)
+    for i in range(0, 6, 2):
+        top = h_lines[i]
+        bottom = h_lines[i + 1]
+        box = [
+            (min(top[0], top[2]) + x_min, top[4] + y_min),
+            (max(top[0], top[2]) + x_min, top[4] + y_min),
+            (max(bottom[0], bottom[2]) + x_min, bottom[4] + y_min),
+            (min(bottom[0], bottom[2]) + x_min, bottom[4] + y_min)
+        ]
+        boxes.append(box)
 
-            if top_lines and bottom_lines:
-                top_line = top_lines[0]
-                bottom_line = bottom_lines[0]
+    # Visualization
+    morph_vis = cv2.cvtColor(morph, cv2.COLOR_GRAY2BGR) if visualize else None
+    annotated = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR) if visualize and len(image.shape) == 2\
+        else image.copy() if visualize\
+        else None
 
-                # Extract coordinates
-                x1_top, y1_top, x2_top, y2_top, _ = top_line
-                x1_bot, y1_bot, x2_bot, y2_bot, _ = bottom_line
-
-                # Ensure left to right ordering
-                if x1_top > x2_top:
-                    x1_top, y1_top, x2_top, y2_top = x2_top, y2_top, x1_top, y1_top
-                if x1_bot > x2_bot:
-                    x1_bot, y1_bot, x2_bot, y2_bot = x2_bot, y2_bot, x1_bot, y1_bot
-
-                # Define box corners clockwise: top-left, top-right, bottom-right, bottom-left
-                box = [
-                    (x1_top, y1_top),  # top-left
-                    (x2_top, y2_top),  # top-right
-                    (x2_bot, y2_bot),  # bottom-right
-                    (x1_bot, y1_bot)  # bottom-left
-                ]
-
-                # Adjust coordinates back to original image space
-                adjusted_box = [(x + x_min, y + y_min) for x, y in box]
-                boxes.append(adjusted_box)
-
-    # Ensure we have exactly 3 boxes
-    if len(boxes) != 3:
-        print("Cannot match edges into text boxes")
-
-    # Sort boxes by y-coordinate (top to bottom)
-    boxes.sort(key=lambda box: box[0][1])
-
-    # Draw detected boxes on the annotated image if visualizing
-    if visualize and annotated_image is not None:
+    if visualize and annotated is not None:
+        for x1, y1, x2, y2, _, _ in h_lines:
+            cv2.line(morph_vis, (x1, y1), (x2, y2), (0, 0, 255), 2)
         for box in boxes:
-            box_np = np.array(box, dtype=np.int32)
-            cv2.polylines(annotated_image, [box_np], True, (0, 255, 0), 2)
+            cv2.polylines(annotated, [np.array(box, dtype=np.int32)], True, (0, 255, 0), 2)
 
-    return boxes, morph_image, annotated_image
+    return boxes, morph_vis, annotated
 
 
 def remove_box_lines(image, text_boxes, brush_thickness, margin=0):

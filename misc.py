@@ -1,3 +1,5 @@
+from typing import Dict, List
+
 import numpy as np
 
 
@@ -20,5 +22,49 @@ def generate_answer_keys(num_questions, choices_per_question):
     return result
 
 
-if __name__ == "__main__":
-    print(generate_answer_keys(5, 4))
+def grade_student_answers(answer_keys: List[Dict[str, int | List[str]]],
+                          student_answers: Dict[int, List[str]]
+                          ) -> List[Dict[str, int | List[str] | str]]:
+    """
+    Grade student answers against answer keys.
+    Args:
+        answer_keys: List of dicts with "question", "answer" (list), "score" (int)
+        student_answers: Dict with question numbers as keys, answer lists as values
+    Returns:
+        (score, grading_details_list)
+    """
+    total_possible_score = sum(key["score"] for key in answer_keys)
+    total_student_score = 0
+    grading_details = []
+
+    for answer_key in answer_keys:
+        question_num = answer_key["question"]
+        correct_answers = set(answer_key["answer"])
+        max_score = answer_key["score"]
+
+        student_answer = student_answers.get(question_num, [])
+        student_answer_set = set(student_answer)
+
+        # Apply grading rules
+        if not student_answer:  # Rule 1: empty answer
+            score, state = 0, 'empty'
+        elif len(student_answer) > len(correct_answers):  # Rule 2: too many answers
+            score, state = 0, 'invalid'
+        elif student_answer_set == correct_answers:  # Rule 3: perfect match
+            score, state = max_score, 'correct'
+        elif student_answer_set & correct_answers:  # Rule 4: partial match
+            score = (len(student_answer_set & correct_answers) / len(correct_answers)) * max_score
+            state = 'partial'
+        else:  # Rule 5: no correct answers
+            score, state = 0, 'wrong'
+
+        total_student_score += score
+        grading_details.append({
+            "question": question_num,
+            "student_answer": student_answer,
+            "student_score": score,
+            "state": state
+        })
+
+    ratio = (total_student_score / total_possible_score) if total_possible_score > 0 else 0
+    return ratio, grading_details

@@ -3,6 +3,7 @@ import cv2
 from typing import List, Tuple, Dict, Optional
 from dataclasses import dataclass
 
+# TODO: implement fallback
 
 @dataclass
 class BubbleContour:
@@ -50,43 +51,32 @@ def grid_split(img: np.ndarray, num_row: int, num_col: int,
 
 
 def filter_bubble_contours(img: np.ndarray,
-                           min_size: float = 0.2,
-                           circularity_threshold: float = 0.7,
-                           binary_threshold: int = -1) -> List[BubbleContour]:
+                           min_area: int,
+                           circularity_threshold: float = 0.7) -> List[BubbleContour]:
     """
     Find and analyze bubble contours
     Args:
         img: Input grayscale
-        min_size: Min fraction of image area for valid bubble
-        circularity_threshold: Minimum circularity (4π×area/perimeter²)
-        binary_threshold: Fixed threshold value (or -1 for Otsu)
-
+        min_area: min area for valid contour (px^2)
+        circularity_threshold: Minimum circularity (4*pi*×area / perimeter ** 2)
     Returns:
         List of BubbleContour objects with fill_ratio calculated
     """
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if len(img.shape) == 3 else img
 
-    # Simple binary threshold to preserve actual fill levels
-    if binary_threshold == -1:
-        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    else:
-        _, binary = cv2.threshold(gray, binary_threshold, 255, cv2.THRESH_BINARY_INV)
+    # Binarize
+    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
     # Find all contours
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
     if len(contours) == 0:
         return []
 
-    img_area = img.shape[0] * img.shape[1]
-    min_area = img_area * min_size
-
     bubbles = []
-
     for cnt in contours:
         area = cv2.contourArea(cnt)
 
-        # Size filter - only minimum, no maximum
+        # Area check
         if area < min_area:
             continue
 
@@ -94,25 +84,24 @@ def filter_bubble_contours(img: np.ndarray,
         perimeter = cv2.arcLength(cnt, True)
         if perimeter == 0:
             continue
-        circularity = 4 * np.pi * area / (perimeter * perimeter)
 
+        circularity = 4 * np.pi * area / (perimeter * perimeter)
         if circularity < circularity_threshold:
             continue
 
         # Compute centroid
-        M = cv2.moments(cnt)
-        if M["m00"] == 0:
+        moment = cv2.moments(cnt)
+        if moment["m00"] == 0:
             continue
-        cx = M["m10"] / M["m00"]
-        cy = M["m01"] / M["m00"]
+        cx = moment["m10"] / moment["m00"]
+        cy = moment["m01"] / moment["m00"]
 
         # Calculate fill ratio
-        mask = np.zeros(gray.shape, dtype=np.uint8)
-        cv2.drawContours(mask, [cnt], -1, 255, -1)
+        cnt_mask = np.zeros(gray.shape, dtype=np.uint8)
+        cv2.drawContours(cnt_mask, [cnt], -1, 255, -1)
 
-        # Count dark pixels within bubble
-        bubble_region = cv2.bitwise_and(binary, mask)
-        fill_ratio = np.sum(bubble_region > 0) / np.sum(mask > 0)
+        shaded_mask = cv2.bitwise_and(binary, cnt_mask)
+        fill_ratio = np.sum(shaded_mask > 0) / np.sum(cnt_mask > 0)
 
         bubbles.append(BubbleContour(
             contour=cnt,
@@ -122,17 +111,16 @@ def filter_bubble_contours(img: np.ndarray,
             fill_ratio=fill_ratio
         ))
 
-    # Return largest bubble (most likely the actual bubble, not noise)
+    # Sort bubbles by area
     return sorted(bubbles, key=lambda b: b.area, reverse=True)
 
 
 # Helper function for analyzing single rectangle
-def analyze_rectangle(rect_img: np.ndarray, rows: int, cols: int) -> List[List[Dict]]:
+def analyze_rectangle(rect_img: np.ndarray, rows: int, cols: int, min_area: int) -> List[List[Dict]]:
     """
     Analysis of a rectangle, returning bubble data in row structure.
-
     Returns:
-        List of rows, each containing list of cell analysis dicts
+        List of rows, each containing list of cell
     """
     grid = grid_split(rect_img, rows, cols)
     results = []
@@ -140,7 +128,7 @@ def analyze_rectangle(rect_img: np.ndarray, rows: int, cols: int) -> List[List[D
     for row_cells in grid:
         row_results = []
         for cell in row_cells:
-            bubbles = filter_bubble_contours(cell)
+            bubbles = filter_bubble_contours(cell, min_area)
 
             if not bubbles:
                 row_results.append({
@@ -160,28 +148,17 @@ def analyze_rectangle(rect_img: np.ndarray, rows: int, cols: int) -> List[List[D
 
 def extract_answer(img: np.ndarray,
                    rectangles: List[List[List[Tuple[int, int]]]],
-                   num_questions: int,
-                   questions_per_group: int,
-                   choices_per_question: int,
-                   filled_threshold: float = 0.55,
-                   partial_threshold: float = 0.20,
-                   confidence_threshold: float = 0.65) -> Tuple[Dict[int, List[str]], Dict[int, List[Tuple]]]:
+                   num_questions: int, questions_per_group: int, choices_per_question: int,
+                   bubble_radius: int,
+                   filled_threshold: float = 0.6,
+                   partial_threshold: float = 0.3,
+                   confidence_threshold: float = 0.65
+                   ) -> Tuple[Dict[int, List[str]], Dict[int, List[Tuple]]]:
     """
     Extract answers from entire answer sheet.
-
-    Args:
-        img: Grayscale answer sheet image
-        rectangles: List of rectangle rows, each containing list of 4-corner tuples
-        num_questions: Total number of questions
-        questions_per_group: Questions per rectangle
-        choices_per_question: Number of choices (A, B, C, etc.)
-        filled_threshold: Min fill ratio for marked answer
-        partial_threshold: Fill ratio for partial warning
-        confidence_threshold: Min confidence to trust detection
-
     Returns:
         (answers_dict, flagged_rects_dict)
-        - answers_dict: {question_num: ['A', 'B'], ...} for multi-select
+        - answers_dict: {question_no: ['A', 'B'], ...} for multi-select
         - flagged_rects_dict: {rect_idx: [(x1,y1,x2,y2), ...]}
     """
     answers = {}
@@ -196,10 +173,10 @@ def extract_answer(img: np.ndarray,
                  for r_idx, row in enumerate(rectangles)
                  for c_idx, corners in enumerate(row)]
 
-    question_num = 1
-
+    question_no = 1
+    partial_count = 0
     for rect_idx, (row_idx, col_idx, corners) in enumerate(rect_list):
-        if question_num > num_questions:
+        if question_no > num_questions:
             break
 
         # Extract bounding box from corners
@@ -212,24 +189,25 @@ def extract_answer(img: np.ndarray,
         rect_img = img[y1:y2, x1:x2]
 
         # Analyze all rows (2D structure preserved)
-        results = analyze_rectangle(rect_img, questions_per_group, choices_per_question)
+        min_area_threshold = bubble_radius ** 2 * np.pi
+        results = analyze_rectangle(rect_img, questions_per_group, choices_per_question, min_area_threshold)
 
         # Determine valid rows for this rectangle
         if rect_idx == last_rect_idx and trailing_questions > 0:
             valid_rows = trailing_questions
         else:
-            valid_rows = min(questions_per_group, num_questions - question_num + 1)
+            valid_rows = min(questions_per_group, num_questions - question_no + 1)
 
         # Process each question row
         for q_row in range(valid_rows):
-            row_results = results[q_row]  # Direct row access
+            row_results = results[q_row]
 
             # Check confidence for entire row
             if any(cell['confidence'] < confidence_threshold for cell in row_results):
                 if rect_idx not in flagged_rects:
                     flagged_rects[rect_idx] = []
                 flagged_rects[rect_idx].append((x1, y1, x2, y2))
-                question_num += 1
+                question_no += 1
                 continue
 
             # Extract marked choices for this question
@@ -238,10 +216,14 @@ def extract_answer(img: np.ndarray,
                 if cell['fill_ratio'] >= filled_threshold:
                     marked_choices.append(chr(ord('A') + choice_idx))
                 elif cell['fill_ratio'] >= partial_threshold:
-                    print(f"Warning: Q {question_num}:{chr(ord('A') + choice_idx)} "
-                          f"partially filled ({cell['fill_ratio']:.2f})")
+                    # print(f"Warning: Q {question_no}:{chr(ord('A') + choice_idx)} "
+                    #       f"partially filled ({cell['fill_ratio']:.2f})")
+                    partial_count += 1
 
-            answers[question_num] = marked_choices
-            question_num += 1
+            answers[question_no] = marked_choices
+            question_no += 1
 
+    print(f"Successfully extracted {len(answers)}/{num_questions} questions,"
+          f" {partial_count} bubbles are partially filled,"
+          f" {len(flagged_rects)} question groups are flagged")
     return answers, flagged_rects
