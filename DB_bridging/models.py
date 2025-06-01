@@ -21,9 +21,11 @@ class StaticMetrics(models.Model):
     top_right = models.IntegerField(null=True, blank=True)
     bottom_right = models.IntegerField(null=True, blank=True)
     bottom_left = models.IntegerField(null=True, blank=True)
-    marker_size = models.IntegerField(null=True, blank=True)
 
+    # Misc size metrics
+    marker_size = models.IntegerField(null=True, blank=True)
     qr_size = models.IntegerField(null=True, blank=True)
+    bubble_radius = models.IntegerField(null=True, blank=True)
 
     # Text field metrics
     txt_label_width = models.IntegerField(null=True, blank=True)
@@ -53,7 +55,7 @@ class AnswerKeys(models.Model):
         app_label = 'DB_bridging'
 
     def __str__(self):
-        return f"AnswerKeys({self.id}: {self.name})"
+        return f"AnswerKeys({self.id})"
 
     # JSON conversion methods
     def set_answers(self, answers: List[Dict[str, Any]]) -> None:

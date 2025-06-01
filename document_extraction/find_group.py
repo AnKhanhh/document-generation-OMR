@@ -306,7 +306,7 @@ def greedy_row_sort(rectangles, y_tolerance=0) -> List[List[List[Tuple[int, int]
     return result_rows
 
 
-def validate_grid_sorting(sorted_rows: List[List[Tuple]], expected_layout: List[int]):
+def validate_grid_sorting(sorted_rows: List[List[List[Tuple]]], expected_layout: List[int]):
     """
     Validate that sorting produces expected grid layout.
     Args:

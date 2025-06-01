@@ -108,10 +108,10 @@ def extract(input_img, template=None, visualize=False):
     exp_layout = dt_dyn.layout
 
     layout = group.greedy_row_sort(rectangles)
-    if not group.validate_grid_sorting(layout,exp_layout):
+    if not group.validate_grid_sorting(layout, exp_layout):
         print("Cannot sort layout geometrically using DBSCAN...")
-        layout = group.clustering_row_sort(rectangles,exp_layout)
-    if not group.validate_grid_sorting(layout,exp_layout):
+        layout = group.clustering_row_sort(rectangles, exp_layout)
+    if not group.validate_grid_sorting(layout, exp_layout):
         print("Warning: cannot map rectangles to original layout")
 
     return viz

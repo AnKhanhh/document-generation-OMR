@@ -1,10 +1,10 @@
 import os
 import uuid
 from datetime import datetime
-from typing import Tuple, Dict, Any
+from typing import Tuple
+
 import cv2
 import numpy as np
-
 from reportlab.graphics import renderPDF
 from reportlab.graphics.barcode import qr
 from reportlab.graphics.shapes import Drawing
@@ -59,7 +59,8 @@ class AnswerSheetGenerator:
             qr_size=self.qr_size,
             marker_size=self.marker_size,
             section_label_height=self.section_label_height,
-            choice_lettering_height=self.lettering_height
+            choice_lettering_height=self.lettering_height,
+            bubble_radius=self.bubble_radius
         )
         self.dynamic_metrics = DynamicMetrics(static_template=self.static_metrics)
 
@@ -474,18 +475,6 @@ class AnswerSheetGenerator:
         margin = self.margin  # 1 cm
         page_width, page_height = self.page_width, self.page_height  # A4
         marker_size = self.marker_size  # 2 cm
-
-        def _draw_checkerboard(c: canvas, x, y, size):
-            """5x5 checkerboard"""
-            from reportlab.lib import colors
-            cell_size = size / 5
-
-            # Draw pattern
-            c.setFillColor(colors.black)
-            for row in range(5):
-                for col in range(5):
-                    if (row + col) % 2 == 0:
-                        c.rect(x + col * cell_size, y + row * cell_size, cell_size, cell_size, fill=1, stroke=0)
 
         def _draw_aruco(c, x, y, size, marker_id=0, dictionary=cv2.aruco.DICT_6X6_250):
             """
