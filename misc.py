@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import numpy as np
 
@@ -24,7 +24,7 @@ def generate_answer_keys(num_questions, choices_per_question):
 
 def grade_student_answers(answer_keys: List[Dict[str, int | List[str]]],
                           student_answers: Dict[int, List[str]]
-                          ) -> List[Dict[str, int | List[str] | str]]:
+                          ) -> Tuple[float, List[Dict[str, int | List[str] | str]]]:
     """
     Grade student answers against answer keys.
     Args:

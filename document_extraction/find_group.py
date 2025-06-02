@@ -132,9 +132,9 @@ def filter_rectangles_metrics(contours, aspect_ratio, estimated_area,
     filtered_contours = []
 
     # Define tolerances
-    area_tolerance = 0.25
-    dimension_tolerance = 0.20
-    aspect_tolerance = 0.15
+    area_tolerance = 0.3
+    dimension_tolerance = 0.3
+    aspect_tolerance = 0.3
 
     for cnt in contours:
         # Get bounding rect

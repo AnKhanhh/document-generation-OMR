@@ -16,6 +16,8 @@ from document_extraction.read_qr import parse_qr
 def extract(input_img, template=None, visualize=False):
     if len(input_img.shape) != 2:
         input_img = cv2.cvtColor(input_img, cv2.COLOR_BGR2GRAY)
+    if len(template.shape) != 2:
+        template = cv2.cvtColor(input_img, cv2.COLOR_BGR2GRAY)
 
     viz: Dict[str, Any] = {}
 
@@ -121,7 +123,25 @@ def extract(input_img, template=None, visualize=False):
                                                            dt_dyn.choices_per_question,
                                                            int(dt_stt.bubble_radius * rpl_point_px))
     # TODO: implement fallback
-    if len(student_answers) == dt_dyn.num_questions:
+    if len(student_answers) != dt_dyn.num_questions:
         pass
 
+    from misc import grade_student_answers
+    score, grading = grade_student_answers(dt_ans, student_answers)
+
+    from  document_generation.summary import SummaryGeneration
+    summary = SummaryGeneration(
+        answer_sheet_id=sheet_id,
+        answer_keys=dt_ans,
+        student_grading=grading,
+        final_score=score,
+        answer_sheet_image=warped_photo,
+        bounding_boxes=text_bounding_coords
+    )
+    summary.generate_pdf("summary.pdf")
+
+    print(f"Extraction pipeline complete:"
+          f" {len(text_bounding_coords)}/3 text box located,"
+          f" {len(grading)}/{dt_dyn.num_questions} questions graded,"
+          f" additional visualizations are {'returned' if visualize else 'discarded'}.")
     return viz

@@ -123,25 +123,25 @@ def generate_lab_test(num_questions: int = 47,
     distorted = distorter.apply_noise(distorted, 0.1)
     cv2.imwrite("out/image/filled_distorted.png", distorted)
 
-    from document_extraction.preprocessing import DocumentPreprocessor
-    preprocessor = DocumentPreprocessor()
-    preprocessor.preprocess_images(template, distorted)
-    corrected = preprocessor.correct_homography()
-
-    cv2.imwrite("out/image/filled_corrected.png", corrected)
+    # from document_extraction.preprocessing import DocumentPreprocessor
+    # preprocessor = DocumentPreprocessor()
+    # preprocessor.preprocess_images(template, distorted)
+    # corrected = preprocessor.correct_homography()
+    #
+    # cv2.imwrite("out/image/filled_corrected.png", corrected)
 
 
 if __name__ == "__main__":
     init_result = DatabaseBridge.initialize()
     print(init_result)
 
-    generate_lab_test()
+    # generate_lab_test()
 
-    # photo = cv2.imread("out/image/filled_distorted.png", cv2.IMREAD_GRAYSCALE)
-    # template = cv2.imread("out/image/pristine.png", cv2.IMREAD_GRAYSCALE)
-    # init_result = DatabaseBridge.initialize()
-    # viz = extraction.extract(photo, template, visualize=True)
-    #
-    # os.makedirs("out/vis_detection", exist_ok=True)
-    # for k, v in viz.items():
-    #     cv2.imwrite(f"out/vis_detection/{k}.png", v)
+    photo = cv2.imread("out/image/filled_distorted.png", cv2.IMREAD_GRAYSCALE)
+    template = cv2.imread("out/image/pristine.png", cv2.IMREAD_GRAYSCALE)
+    init_result = DatabaseBridge.initialize()
+    viz = extraction.extract(photo, template, visualize=True)
+
+    os.makedirs("out/vis_detection", exist_ok=True)
+    for k, v in viz.items():
+        cv2.imwrite(f"out/vis_detection/{k}.png", v)

@@ -189,7 +189,7 @@ def extract_answer(img: np.ndarray,
         rect_img = img[y1:y2, x1:x2]
 
         # Analyze all rows (2D structure preserved)
-        min_area_threshold = bubble_radius ** 2 * np.pi
+        min_area_threshold = (bubble_radius ** 2 * np.pi) / 3
         results = analyze_rectangle(rect_img, questions_per_group, choices_per_question, min_area_threshold)
 
         # Determine valid rows for this rectangle
