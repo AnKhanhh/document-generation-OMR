@@ -123,25 +123,46 @@ def generate_lab_test(num_questions: int = 47,
     distorted = distorter.apply_noise(distorted, 0.1)
     cv2.imwrite("out/image/filled_distorted.png", distorted)
 
-    # from document_extraction.preprocessing import DocumentPreprocessor
-    # preprocessor = DocumentPreprocessor()
-    # preprocessor.preprocess_images(template, distorted)
-    # corrected = preprocessor.correct_homography()
-    #
-    # cv2.imwrite("out/image/filled_corrected.png", corrected)
+
+def clean_directory(directory: str) -> None:
+    """Delete all files in directory, printing each filename."""
+    from pathlib import Path
+    dir_path = Path(directory)
+    if not dir_path.exists():
+        return
+
+    print(f"Cleaning up {directory}:", end="\t")
+
+    count = 0
+    for file_path in dir_path.iterdir():
+        if file_path.is_file():
+            count += 1
+            print(f"{file_path.name}", end=" ")
+            file_path.unlink()
+
+    print(f"...{count} files deleted")
 
 
 if __name__ == "__main__":
     init_result = DatabaseBridge.initialize()
     print(init_result)
 
-    # generate_lab_test()
+    os.makedirs("out/image", exist_ok=True)
+    os.makedirs("out/vis_detection", exist_ok=True)
+    os.makedirs("out/pdf", exist_ok=True)
+
+    clean_directory("out/image")
+    clean_directory("out/vis_detection")
+    clean_directory("out/pdf")
+
+    generate_lab_test()
 
     photo = cv2.imread("out/image/filled_distorted.png", cv2.IMREAD_GRAYSCALE)
     template = cv2.imread("out/image/pristine.png", cv2.IMREAD_GRAYSCALE)
     init_result = DatabaseBridge.initialize()
-    viz = extraction.extract(photo, template, visualize=True)
+    warped, viz = extraction.extract(photo, template, visualize=True)
 
-    os.makedirs("out/vis_detection", exist_ok=True)
+    cv2.imwrite("out/image/filled_corrected.png",warped)
+
     for k, v in viz.items():
         cv2.imwrite(f"out/vis_detection/{k}.png", v)

@@ -114,8 +114,8 @@ def extract(input_img, template=None, visualize=False):
     if not group.validate_grid_sorting(layout, exp_layout):
         print("Cannot sort layout geometrically using DBSCAN...")
         layout = group.clustering_row_sort(rectangles, exp_layout)
-    if not group.validate_grid_sorting(layout, exp_layout):
-        print("Warning: cannot map rectangles to original layout")
+        if not group.validate_grid_sorting(layout, exp_layout):
+            print("Warning: cannot map rectangles to original layout")
 
     student_answers, flagged_rects = bubble.extract_answer(warped_photo, layout,
                                                            dt_dyn.num_questions,
@@ -138,10 +138,10 @@ def extract(input_img, template=None, visualize=False):
         answer_sheet_image=warped_photo,
         bounding_boxes=text_bounding_coords
     )
-    summary.generate_pdf("summary.pdf")
+    summary.generate_pdf("out/pdf/summary.pdf")
 
     print(f"Extraction pipeline complete:"
           f" {len(text_bounding_coords)}/3 text box located,"
           f" {len(grading)}/{dt_dyn.num_questions} questions graded,"
           f" additional visualizations are {'returned' if visualize else 'discarded'}.")
-    return viz
+    return warped_photo, viz

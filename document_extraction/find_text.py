@@ -287,7 +287,7 @@ def detect_text_bounding_boxes(text_rois, roi_coordinates, brush_thickness, min_
             # - Printed text: 0.3-0.5
             # - Handwritten text: 0.15-0.35
             # - Line artifacts: below 0.15
-            # Sources: ICDAR competitions, Smith's "Document Understanding"
+            # ICDAR competitions, Smith's "Document Understanding"
             density = area / (width * height)
             if density < 0.2:
                 continue
@@ -327,7 +327,7 @@ def detect_text_bounding_boxes(text_rois, roi_coordinates, brush_thickness, min_
                 text_lines.append(current_line)
 
             # Select the most promising text line for each ROI
-            # (Form fields typically contain a single line of text)
+            # (Form fields contain a single line of text)
             if text_lines:
                 # Score based on area, density, centrality, and component count
                 scored_lines = []
@@ -346,7 +346,7 @@ def detect_text_bounding_boxes(text_rois, roi_coordinates, brush_thickness, min_
                     score = total_area * center_score * component_count
                     scored_lines.append((score, line))
 
-                # Keep only the highest scoring line
+                # Keep the highest scoring line
                 if scored_lines:
                     best_line = max(scored_lines, key=lambda x: x[0])[1]
                     text_lines = [best_line]
@@ -367,7 +367,7 @@ def detect_text_bounding_boxes(text_rois, roi_coordinates, brush_thickness, min_
 
                 # Dynamic padding based on text height and brush thickness
                 padding_y = max(mean_height * 0.75, int(brush_thickness * 2.5))
-                padding_x = max(mean_height * 0.25, brush_thickness * 2)
+                padding_x = max(mean_height * 0.5, brush_thickness * 2)
 
                 # Apply padding with ROI boundary checks
                 min_x = max(0, min_x - int(padding_x))
@@ -403,4 +403,5 @@ def detect_text_bounding_boxes(text_rois, roi_coordinates, brush_thickness, min_
                 # 4. Add rules based on language characteristics
                 # 5. Implement word segmentation within text lines
 
+    print(f"Detected {len(text_coords)}/3 text region")
     return text_boxes, text_coords
