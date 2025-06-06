@@ -1,156 +1,323 @@
-from typing import List
-
 import cv2
 import numpy as np
+from sklearn.cluster import DBSCAN
+from typing import List, Tuple, Optional, Dict
 
 
-def find_roi_from_inner(image, coords: List[np.ndarray[2]], ratio=0.6, visualize=False):
+def preprocess_roi(image: np.ndarray, coords: np.ndarray,
+                   visualize: bool = False) -> Tuple[np.ndarray, dict, Optional[np.ndarray]]:
     """
-    Extract 3 ROIs from answer sheet
-    Args:
-        image: Original binary image (already homography corrected)
-        coords: List of 4 corner coordinates [top-left, top-right, bottom-right, bottom-left]
-        ratio: Ratio for dividing the upper region horizontally (default=0.6)
-        visualize: Whether to return visualization (default=False)
+    Preprocess image: mask, crop, binarize, and apply morphological opening.
+
     Returns:
-        List of coordinates for 3 ROIs
-        Optional visualization if visualize=True
-        Optional debug image (opened binary) if visualize=True
+        Tuple of (binary_opened_image, metadata, visualization_image)
     """
-    # Create mask and crop based on provided coordinates
-    coords = np.array(coords, dtype=np.int32)
+    # Create mask
     mask = np.zeros(image.shape[:2], dtype=np.uint8)
     cv2.fillPoly(mask, [coords], 255)
 
-    # Get bounding rectangle
+    # Get bounding box
     x, y, w, h = cv2.boundingRect(coords)
-    cropped = image[y:y + h, x:x + w].copy()
+
+    # Crop image and mask
+    cropped = image[y:y + h, x:x + w]
     mask_cropped = mask[y:y + h, x:x + w]
 
-    # Gaussian binarize, then filter for the trapezoidal content region
+    # Convert to grayscale if needed
     gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY) if len(cropped.shape) == 3 else cropped
-    binary = cv2.adaptiveThreshold(
-        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2
-    )
+
+    # Otsu thresholding - cleaner than adaptive for uniform documents
+    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+    # Apply mask
     binary = cv2.bitwise_and(binary, binary, mask=mask_cropped)
 
-    # Opening operation, remove all lines below 75% width
-    # TODO: instead of strict open morphology, implement post-processing sorting by line length
-    h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (int(w * 0.75), 1))
-    h_lines = cv2.morphologyEx(binary, cv2.MORPH_OPEN, h_kernel)
+    # Morphological opening to remove short lines (< 30% of width)
+    kernel_width = int(w * 0.3)
+    h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_width, 1))
+    binary_opened = cv2.morphologyEx(binary, cv2.MORPH_OPEN, h_kernel)
 
-    # Hough line detection
-    lines = cv2.HoughLinesP(h_lines, 1, np.pi / 180, threshold=w // 3, minLineLength=w // 2, maxLineGap=h // 10)
+    metadata = {
+        'offset': (x, y),
+        'size': (w, h),
+        'mask': mask_cropped
+    }
 
-    # Fallback to using 1d vertical histogram
-    if lines is None or len(lines) < 2:
-        print("Hough line detection failed, falling back to projection profile")
-        # Absolute threshold: 80% width occupancy minimum
-        abs_threshold = int(0.8 * w)
+    vis_image = None
+    if visualize:
+        # Stack grayscale, binary original, binary opened, and mask horizontally
+        vis_gray = cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB)
+        vis_binary = cv2.cvtColor(binary, cv2.COLOR_GRAY2RGB)
+        vis_opened = cv2.cvtColor(binary_opened, cv2.COLOR_GRAY2RGB)
+        vis_mask = cv2.cvtColor(mask_cropped, cv2.COLOR_GRAY2RGB)
 
-        # Find contiguous horizontal slices above threshold
-        h_proj = np.sum(h_lines, axis=1)
-        regions = []
-        in_region = False
-        start = 0
-        for y in range(h):
-            if h_proj[y] >= abs_threshold and not in_region:
-                # Start of new region
-                in_region = True
-                start = y
-            elif h_proj[y] < abs_threshold and in_region:
-                # End of region
-                regions.append((start, y - 1))
-                in_region = False
-        # Edge case: last region extends to image edge
-        if in_region:
-            regions.append((start, h - 1))
+        vis_image = np.hstack([vis_gray, vis_binary, vis_opened, vis_mask])
 
-        # Find center of a thick line
-        y_positions = [int((start + end) / 2) for start, end in regions]
+    return binary_opened, metadata, vis_image
 
-        if len(y_positions) < 2:
-            raise ValueError(f"Line detection failed")
-        y_positions = sorted(y_positions)[:2]
 
-    # Successful Hough detection, post-processing
+def detect_lines_hough(binary: np.ndarray, metadata: dict,
+                       min_line_length_ratio: float = 0.3,
+                       visualize: bool = False) -> Tuple[List[np.ndarray], Optional[np.ndarray], Optional[np.ndarray]]:
+    """
+    Detect lines using HoughLinesP with adaptive parameters.
+
+    Returns:
+        Tuple of (horizontal_lines, vis_all_lines, vis_horizontal_lines)
+    """
+    w, h = metadata['size']
+
+    # Adaptive parameters based on image size
+    min_line_length = int(w * min_line_length_ratio)
+    max_line_gap = int(w * 0.1)
+    threshold = max(50, w // 10)
+
+    # Detect lines
+    lines = cv2.HoughLinesP(
+        binary,
+        rho=1,
+        theta=np.pi / 180,
+        threshold=threshold,
+        minLineLength=min_line_length,
+        maxLineGap=max_line_gap
+    )
+
+    if lines is None:
+        lines = []
     else:
-        # Extract y-coordinates
-        y_avg = []
-        for line in lines:
-            for x1, y1, x2, y2 in line:
-                y_avg.append((y1 + y2) // 2)
-        # Cluster y-values to find distinct lines
-        y_avg = np.array(y_avg)
-        y_avg.sort()
+        lines = [line[0] for line in lines]
 
-        # Clustering: lines within 10 pixels are considered same line
-        clusters = []
-        current_cluster = [y_avg[0]]
-        for i in range(1, len(y_avg)):
-            if y_avg[i] - y_avg[i - 1] <= 10:  # Threshold
-                current_cluster.append(y_avg[i])
-            else:
-                clusters.append(int(np.mean(current_cluster)))
-                current_cluster = [y_avg[i]]
-        if current_cluster:
-            clusters.append(int(np.mean(current_cluster)))
+    # Filter for roughly horizontal lines (angle < 20 degrees)
+    horizontal_lines = []
+    for x1, y1, x2, y2 in lines:
+        angle = abs(np.arctan2(y2 - y1, x2 - x1) * 180 / np.pi)
+        if angle < 20 or angle > 160:
+            horizontal_lines.append([x1, y1, x2, y2])
 
-        if len(clusters) < 2:
-            raise ValueError(f"After distance filtering (10px), find {len(clusters)} line, need 2")
+    vis_all_lines = None
+    vis_horizontal_lines = None
 
-        y_positions = sorted(clusters)[:2]
+    if visualize:
+        # Visualization of all detected lines
+        vis_all_lines = cv2.cvtColor(binary, cv2.COLOR_GRAY2RGB)
+        for x1, y1, x2, y2 in lines:
+            cv2.line(vis_all_lines, (x1, y1), (x2, y2), (255, 0, 0), 2)  # Blue for all lines
 
-    # Account for cropping offset
-    y1, y2 = y_positions[0] + y, y_positions[1] + y
+        # Visualization of horizontal lines only
+        vis_horizontal_lines = cv2.cvtColor(binary, cv2.COLOR_GRAY2RGB)
+        for x1, y1, x2, y2 in horizontal_lines:
+            cv2.line(vis_horizontal_lines, (x1, y1), (x2, y2), (0, 255, 0), 2)  # Green for horizontal
 
-    # Calculate vertical split based on ratio parameter
-    left_width = int((coords[1][0] - coords[0][0]) * ratio)
-    x_split = coords[0][0] + left_width
+    return horizontal_lines, vis_all_lines, vis_horizontal_lines
 
-    # Define ROIs in original image
-    roi_coords = [
-        # ROI 1: Top-left region - text fields
-        [
-            [coords[0][0], y1],
+
+def cluster_lines(lines: List[np.ndarray], eps: float = 15,
+                  visualize: bool = False) -> List[Dict]:
+    """
+    Cluster lines by their y-coordinates and merge.
+
+    Returns:
+        List of merged line clusters with properties
+    """
+    if not lines:
+        return []
+
+    # Extract y-centers
+    y_centers = []
+    for x1, y1, x2, y2 in lines:
+        y_centers.append((y1 + y2) / 2)
+
+    y_centers = np.array(y_centers).reshape(-1, 1)
+
+    # Cluster by y-position
+    clustering = DBSCAN(eps=eps, min_samples=1).fit(y_centers)
+
+    # Merge lines in each cluster
+    clusters = []
+    for label in set(clustering.labels_):
+        if label == -1:  # Skip noise
+            continue
+
+        cluster_indices = np.where(clustering.labels_ == label)[0]
+        cluster_lines = [lines[i] for i in cluster_indices]
+
+        # Calculate cluster properties
+        all_x = []
+        all_y = []
+        for x1, y1, x2, y2 in cluster_lines:
+            all_x.extend([x1, x2])
+            all_y.extend([y1, y2])
+
+        clusters.append({
+            'y_center': np.mean(all_y),
+            'x_min': min(all_x),
+            'x_max': max(all_x),
+            'length': max(all_x) - min(all_x),
+            'line_count': len(cluster_lines),
+            'lines': cluster_lines
+        })
+
+    # Sort by total length (length * line_count)
+    clusters.sort(key=lambda c: c['length'] * c['line_count'], reverse=True)
+
+    if visualize:
+        print(f"Found {len(clusters)} line clusters:")
+        for i, cluster in enumerate(clusters):
+            print(f"  Cluster {i}: y={cluster['y_center']:.1f}, "
+                  f"length={cluster['length']}, lines={cluster['line_count']}")
+
+    return clusters
+
+
+def filter_best_lines(clusters: List[Dict], n_lines: int = 2,
+                      metadata: dict = None) -> List[float]:
+    """
+    Filter and select the best n horizontal lines.
+    Selection criteria: Keep lines >= 90% of longest, then take topmost n lines.
+
+    Returns:
+        Y-coordinates of selected lines
+    """
+    if not clusters:
+        raise ValueError("No line clusters found")
+
+    # Find the longest line cluster
+    max_length = max(cluster['length'] for cluster in clusters)
+
+    # Keep clusters that are at least 90% of the longest
+    length_threshold = max_length * 0.9
+    valid_clusters = [c for c in clusters if c['length'] >= length_threshold]
+
+    if len(valid_clusters) < n_lines:
+        # Fallback: take the n longest clusters overall
+        print(f"Warning: Only {len(valid_clusters)} clusters pass 90% threshold, taking {n_lines} longest clusters")
+        clusters_by_length = sorted(clusters, key=lambda c: c['length'], reverse=True)
+        valid_clusters = clusters_by_length[:n_lines]
+
+    # Sort by y-position (ascending) and take the topmost n
+    valid_clusters.sort(key=lambda c: c['y_center'])
+    selected = valid_clusters[:n_lines]
+
+    # Extract y-positions
+    y_positions = [c['y_center'] for c in selected]
+
+    return sorted(y_positions)
+
+
+def create_rois(coords: np.ndarray, y_lines: List[float],
+                metadata: dict, ratio: float = 0.6) -> List[np.ndarray]:
+    """
+    Create ROI coordinates from detected lines.
+    Uses ratio to split based on original ROI edges, not line endpoints.
+
+    Returns:
+        List of 3 ROI coordinate arrays
+    """
+    if len(y_lines) < 2:
+        raise ValueError(f"Need at least 2 lines, got {len(y_lines)}")
+
+    # Convert to original image coordinates
+    offset_x, offset_y = metadata['offset']
+    y1 = int(y_lines[0]) + offset_y
+    y2 = int(y_lines[1]) + offset_y
+
+    # Calculate horizontal split based on original ROI edges
+    # Use the top edge of the ROI for consistent x-coordinates
+    left_x = coords[0][0]  # Top-left x
+    right_x = coords[1][0]  # Top-right x
+    x_split = left_x + int((right_x - left_x) * ratio)
+
+    return [
+        # ROI 1: Top-left (text fields)
+        np.array([
+            [left_x, y1],
             [x_split, y1],
             [x_split, y2],
-            [coords[0][0], y2]
-        ],
+            [left_x, y2]
+        ], dtype=np.int32),
 
-        # ROI 2: Top-right region - qrcode
-        [
+        # ROI 2: Top-right (QR code)
+        np.array([
             [x_split, y1],
-            [coords[1][0], y1],
-            [coords[1][0], y2],
+            [right_x, y1],
+            [right_x, y2],
             [x_split, y2]
-        ],
+        ], dtype=np.int32),
 
-        # ROI 3: Bottom region - answer section
-        [
+        # ROI 3: Bottom (answer section)
+        np.array([
             [coords[0][0], y2],
             [coords[1][0], y2],
-            [coords[2][0], coords[2][1]],
-            [coords[3][0], coords[3][1]]
-        ]
+            coords[2],
+            coords[3]
+        ], dtype=np.int32)
     ]
 
-    # Create visualization if requested
+
+def visualize_rois(image: np.ndarray, roi_coords: List[np.ndarray],
+                   detected_lines: List[float] = None, metadata: dict = None) -> np.ndarray:
+    """
+    Create visualization of detected ROIs.
+
+    Returns:
+        Visualization image
+    """
+    vis = image.copy() if len(image.shape) == 3 else cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+
+    # Draw ROI boundaries
+    colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255)]  # BGR
+    for roi, color in zip(roi_coords, colors):
+        cv2.polylines(vis, [roi], True, color, 2)
+
+    # Draw detected horizontal lines if provided
+    if detected_lines and metadata:
+        offset_y = metadata['offset'][1]
+        for y in detected_lines:
+            y_global = int(y) + offset_y
+            cv2.line(vis, (0, y_global), (vis.shape[1] - 1, y_global), (0, 255, 255), 1)
+
+    return vis
+
+
+def find_roi_from_inner(image: np.ndarray, coords: List[np.ndarray],
+                        ratio: float = 0.6, visualize: bool = False) -> Tuple[List[np.ndarray], np.ndarray]:
+    """
+    Main function to extract 3 ROIs using HoughLinesP.
+
+    Args:
+        image: Input image
+        coords: ROI corners [TL, TR, BR, BL]
+        ratio: Horizontal split ratio
+        visualize: Enable visualization
+
+    Returns:
+        Tuple of (roi_coords, visualization_image)
+    """
+    coords = np.array(coords, dtype=np.int32)
+
+    # Step 1: Preprocess
+    binary, metadata, _ = preprocess_roi(image, coords, visualize=False)
+
+    # Step 2: Detect lines
+    lines, _, _ = detect_lines_hough(binary, metadata, visualize=False)
+    if not lines:
+        raise ValueError("No horizontal lines detected on answer sheet")
+
+    # Step 3: Cluster lines
+    clusters = cluster_lines(lines, visualize=False)
+
+    # Step 4: Filter best lines
+    y_positions = filter_best_lines(clusters, n_lines=2, metadata=metadata)
+
+    # Step 5: Create ROIs
+    roi_coords = create_rois(coords, y_positions, metadata, ratio)
+
+    # Step 6: Visualize
+    vis_image = None
     if visualize:
-        vis_image = image.copy() if len(image.shape) == 3 else cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+        vis_image = visualize_rois(image, roi_coords, y_positions, metadata)
 
-        # Red boundary
-        boundary_color = (255, 0, 0)
-        for roi in roi_coords:
-            roi_pts = np.array(roi, dtype=np.int32)
-            cv2.polylines(vis_image, [roi_pts], True, boundary_color, 2)
-
-        # Visualize opening morphology
-        h_lines_vis = cv2.cvtColor(h_lines, cv2.COLOR_GRAY2RGB)
-
-        return roi_coords, vis_image, h_lines_vis
-
-    return roi_coords, None, None
+    return roi_coords, vis_image
 
 
 def crop_roi(rois, crop_pixels):
