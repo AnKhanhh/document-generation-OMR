@@ -135,6 +135,8 @@ def filter_rectangles_metrics(contours, aspect_ratio, estimated_area,
     area_tolerance = 0.3
     dimension_tolerance = 0.3
     aspect_tolerance = 0.3
+    print(f"Metrics-based filtering (ratio={aspect_ratio},area={estimated_area},"
+          f"w={estimated_width},h={estimated_height})", end="...")
 
     for cnt in contours:
         # Get bounding rect
@@ -165,7 +167,7 @@ def filter_rectangles_metrics(contours, aspect_ratio, estimated_area,
         # Passed all metric checks
         filtered_contours.append(cnt)
 
-    print(f"Metrics-based filtering: {len(filtered_contours)}/{len(contours)} contours passed")
+    print(f"{len(filtered_contours)}/{len(contours)} contours passed")
     return filtered_contours
 
 

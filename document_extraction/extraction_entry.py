@@ -96,9 +96,9 @@ def extract(input_img, template=None, visualize=False):
         rect_width_px = rpl_point_px * dt_dyn.choice_width * dt_dyn.choices_per_question
         rect_height_px = rpl_point_px * dt_dyn.questions_per_group * dt_dyn.question_height
         filtered_contours = group.filter_rectangles_metrics(filtered_contours,
-                                                            int(rect_width_px / rect_height_px),
-                                                            int(rect_width_px * rect_height_px),
-                                                            rect_width_px, rect_height_px)
+                                                            rect_width_px / rect_height_px,
+                                                            rect_width_px * rect_height_px,
+                                                            int(rect_width_px), int(rect_height_px))
         num_contour = len(filtered_contours)
 
     if num_contour == num_group:
@@ -127,12 +127,14 @@ def extract(input_img, template=None, visualize=False):
         pass
 
     from misc import grade_student_answers
-    score, grading = grade_student_answers(dt_ans, student_answers)
+    # Only grade student for printed questions
+    answer_keys = [d for d in dt_ans if d['question'] <= dt_dyn.num_questions]
+    score, grading = grade_student_answers(answer_keys, student_answers)
 
-    from  document_generation.summary import SummaryGeneration
+    from document_generation.summary import SummaryGeneration
     summary = SummaryGeneration(
         answer_sheet_id=sheet_id,
-        answer_keys=dt_ans,
+        answer_keys=answer_keys,
         student_grading=grading,
         final_score=score,
         answer_sheet_image=warped_photo,

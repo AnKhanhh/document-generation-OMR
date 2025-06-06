@@ -70,7 +70,7 @@ class AnswerSheetGenerator:
         pdfmetrics.registerFont(TTFont('Cursive-standard-Bold', 'resources/font/Cursive-standard-Bold.ttf'))
         pdfmetrics.registerFont(TTFont('AnthonioScript', 'resources/font/AnthonioScript.ttf'))
         self.bubble_fill_size = self.bubble_radius * np.random.uniform(0.8, 1.05)
-        self.fill_font = np.random.choice(["kindergarten", "Cursive-standard", "Cursive-standard-Bold", "AnthonioScript", "Helvetica"])
+        self.fill_font = np.random.choice(["kindergarten", "Cursive-standard", "Cursive-standard-Bold", "Helvetica"])
 
     def generate_answer_sheet(self,
                               num_questions: int = 30,
@@ -156,7 +156,7 @@ class AnswerSheetGenerator:
         def fill_field(text, y_pos):
             c.saveState()
             c.setFillColor(colors.blue)
-            c.setFont(self.fill_font, np.random.randint(10, 20))
+            c.setFont(self.fill_font, np.random.randint(14, 22))
             c.drawString(self.margin + field_label_width + np.random.uniform(0.25, 4.5) * cm,
                          y_pos + np.random.randint(-2, 1) * mm,
                          f"{text}")
