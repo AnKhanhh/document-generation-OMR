@@ -26,7 +26,7 @@ def detect_text_boxes(image, roi_corners, brush_thickness, visualize=False):
 
     results = []
     # Try multiple kernel sizes
-    for kernel_factor in [0.7, 0.5, 0.3]:
+    for kernel_factor in [0.6, 0.4, 0.3]:
         kernel_width = int(roi_width * kernel_factor)
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_width, 1))
         morph = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
@@ -42,7 +42,7 @@ def detect_text_boxes(image, roi_corners, brush_thickness, visualize=False):
             for line in lines:
                 x1, y1, x2, y2 = line[0]
                 angle = np.abs(np.degrees(np.arctan2(y2 - y1, x2 - x1))) % 180
-                if angle < 15 or angle > 165:
+                if angle < 20 or angle > 160:
                     y_mid = (y1 + y2) / 2
                     length = np.hypot(x2 - x1, y2 - y1)
                     h_lines.append((x1, y1, x2, y2, y_mid, length))
@@ -113,6 +113,7 @@ def detect_text_boxes(image, roi_corners, brush_thickness, visualize=False):
 
         h_lines = clustered_lines
 
+    # TODO: code fallback not tested
     if len(h_lines) < 6:
         print(f"Warning: detected {len(h_lines)}/6 lines needed to form text fields")
         return [], None, None

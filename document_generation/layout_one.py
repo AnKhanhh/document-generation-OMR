@@ -85,7 +85,7 @@ class AnswerSheetGenerator:
         filename = filename or f"answer_sheet_{timestamp}.pdf"
         filepath = os.path.join(self.output_dir, filename)
         num_questions = max(1, num_questions)  # 1 <= question
-        choices_per_question = max(2, min(26, choices_per_question))  # 2 <= choices <= 26
+        choices_per_question = max(2, min(12, choices_per_question))  # 2 <= choices <= 12
         questions_per_group = max(1, min(num_questions, questions_per_group))  # 1 <= q_per_g <= total_q
 
         # Create canvas and set metadata

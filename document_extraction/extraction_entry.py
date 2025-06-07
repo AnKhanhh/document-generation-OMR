@@ -126,7 +126,7 @@ def extract(input_img, template=None, visualize=False):
     if len(student_answers) != dt_dyn.num_questions:
         pass
 
-    from misc import grade_student_answers
+    from utility.misc import grade_student_answers
     # Only grade student for printed questions
     answer_keys = [d for d in dt_ans if d['question'] <= dt_dyn.num_questions]
     score, grading = grade_student_answers(answer_keys, student_answers)

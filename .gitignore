@@ -6,4 +6,3 @@
 **/test*.*
 **/build*.*
 *.iml
-*.sqlite

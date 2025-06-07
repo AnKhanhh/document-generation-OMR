@@ -46,7 +46,7 @@ def generate_document(num_questions: int = 60,
                       choices_per_question: int = 4,
                       keys=None):
     from DB_bridging.models import AnswerKeys
-    from DB_bridging.id_gen import IDGenerator
+    from utility.id_gen import IDGenerator
 
     id_generator = IDGenerator()
     sheet_id = id_generator.generate()
@@ -80,7 +80,7 @@ def generate_document(num_questions: int = 60,
 def generate_lab_test(num_questions: int = 47,
                       questions_per_group: int = 4,
                       choices_per_question: int = 5):
-    from DB_bridging.id_gen import IDGenerator
+    from utility.id_gen import IDGenerator
     sheet_id = IDGenerator().generate()
 
     AnswerSheetGenerator(fill_in=True) \
@@ -98,7 +98,7 @@ def generate_lab_test(num_questions: int = 47,
                                          filename="pristine.pdf")
     convert_pdfs_to_images("out/pdf", "out/image", ext="png", zoom=3)
 
-    from misc import generate_answer_keys
+    from utility.misc import generate_answer_keys
     from DB_bridging.models import AnswerKeys
     answer_keys = AnswerKeys()
     answer_keys.set_answers(generate_answer_keys(num_questions, questions_per_group))
@@ -147,22 +147,23 @@ if __name__ == "__main__":
     init_result = DatabaseBridge.initialize()
     print(init_result)
 
-    os.makedirs("out/image", exist_ok=True)
-    os.makedirs("out/vis_detection", exist_ok=True)
-    os.makedirs("out/pdf", exist_ok=True)
+    # os.makedirs("out/image", exist_ok=True)
+    # os.makedirs("out/vis_detection", exist_ok=True)
+    # os.makedirs("out/pdf", exist_ok=True)
 
-    clean_directory("out/image")
-    clean_directory("out/vis_detection")
-    clean_directory("out/pdf")
+    # clean_directory("out/image")
+    # clean_directory("out/vis_detection")
+    # clean_directory("out/pdf")
 
-    generate_lab_test()
+    # generate_lab_test(num_questions=60, questions_per_group=4, choices_per_question=4)
 
-    photo = cv2.imread("out/image/filled_distorted.png", cv2.IMREAD_GRAYSCALE)
+    photo = cv2.imread("out/image/filled_distorted.jpg", cv2.IMREAD_GRAYSCALE)
     template = cv2.imread("out/image/pristine.png", cv2.IMREAD_GRAYSCALE)
     init_result = DatabaseBridge.initialize()
-    warped, viz = extraction.extract(photo, template, visualize=True)
+    warped, viz = extraction.extract(photo, template, visualize=False)
 
-    cv2.imwrite("out/image/filled_corrected.png",warped)
+    cv2.imwrite("out/image/filled_corrected.png", warped)
 
-    for k, v in viz.items():
-        cv2.imwrite(f"out/vis_detection/{k}.png", v)
+    if viz is not None:
+        for k, v in viz.items():
+            cv2.imwrite(f"out/vis_detection/{k}.png", v)
