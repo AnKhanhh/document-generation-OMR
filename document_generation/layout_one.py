@@ -1,7 +1,10 @@
 import os
 import uuid
 from datetime import datetime
-from typing import Tuple
+from typing import Tuple, Optional, Any
+
+from DB_bridging.database_bridge import DatabaseBridge
+from document_generation.layout_1_limits import LayoutConstraints, AnswerSheetLayoutValidator
 
 import cv2
 import numpy as np
@@ -77,19 +80,20 @@ class AnswerSheetGenerator:
                               choices_per_question: int = 4,
                               questions_per_group: int = 5,
                               sheet_id: str = None,
-                              filename: str = None) -> Tuple[str, str]:
+                              filename: str = None,
+                              buffer: Any = None) -> None:
         """Generate answer sheet. Returns filepath, sheet_id, custom metadata"""
         # Input validation and initialization
         sheet_id = sheet_id or str(uuid.uuid4())
         timestamp = datetime.now().strftime("%M:%H_%d/%m%Y")
         filename = filename or f"answer_sheet_{timestamp}.pdf"
-        filepath = os.path.join(self.output_dir, filename)
-        num_questions = max(1, num_questions)  # 1 <= question
-        choices_per_question = max(2, min(12, choices_per_question))  # 2 <= choices <= 12
-        questions_per_group = max(1, min(num_questions, questions_per_group))  # 1 <= q_per_g <= total_q
 
         # Create canvas and set metadata
-        c = canvas.Canvas(filepath, pagesize=A4)
+        if buffer is not None:
+            c = canvas.Canvas(buffer, pagesize=A4)
+        else:
+            filepath = os.path.join(self.output_dir, filename)
+            c = canvas.Canvas(filepath, pagesize=A4)
         c.setTitle(timestamp)
 
         # Draw all components in sequence
@@ -102,7 +106,7 @@ class AnswerSheetGenerator:
 
         self.dynamic_metrics.instance_id = sheet_id
 
-        return filepath, sheet_id
+        # return filepath, sheet_id
 
     def _draw_header(self, c: canvas) -> float:
         """Draw the header of the answer sheet."""
@@ -228,69 +232,32 @@ class AnswerSheetGenerator:
                              num_questions: int, choices_per_question: int, questions_per_group: int,
                              y_start: float) -> float:
         """
-        Draw the answer bubbles section with proper spacing and layout management.
-        Some values are defined in build time, but can be overwritten at run time dynamically
+        Draw the answer sections, spacing and layout optimized dynamically, params validated externally
         """
-        # 1.Define basic dimensions for answer section
-        available_height = y_start - (self.margin + self.marker_size + 0.2 * cm)  # 2mm padding from alignment marks
+        # 1. Define basic dimensions for answer section
+        available_height = y_start - (self.margin + self.marker_size + 0.2 * cm)
         available_width = self.page_width - 2 * self.margin
         answer_section_label_height = self.section_label_height
         alphabet_str = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
-        # 2.Initialize subsections (answer groups) parameters
+        # 2. Initialize subsections (answer groups) parameters
         choice_width = self.bubble_horizontal_space
         question_number_width = self.question_number_label_width
         group_width = question_number_width + (choices_per_question * choice_width)
         group_height = self.question_height * questions_per_group
-        group_y_gap = self.answer_group_top_margin
+        group_y_gap = min(self.answer_group_top_margin, group_height * 0.4)  # in case grouping is small
         lettering_height = self.lettering_height
 
-        # 3.Calculate layout limits, recalibrate parameters to fit
-        # Calibrate width
+        # 3. Calculate layout (no validation - parameters are pre-validated)
         max_groups_allowed_per_row = int(available_width / group_width)
-        if max_groups_allowed_per_row < 1:
-            choices_per_question = int((available_width - question_number_width) / choice_width)
-            print(f"Warning: insufficient width, limiting to {choices_per_question} choices per questions")
-
-            group_width = question_number_width + (choices_per_question * choice_width)
-            max_groups_allowed_per_row = int(available_width / group_width)
-            assert max_groups_allowed_per_row == 1, "answer section width calibration failed"
-
-        # Number of groups needed to hold all questions
         num_group = (num_questions + questions_per_group - 1) // questions_per_group
-        # Number of rows needed to hold all groups
-        num_group_row = (num_group + max_groups_allowed_per_row - 1) // max_groups_allowed_per_row
 
-        # Calibrate height
-        # noinspection PyUnusedLocal
-        # If not enough vertical space, fit as many answer groups as possible
+        # Calculate optimal row distribution
+        max_rows_allowed = int((available_height - answer_section_label_height - lettering_height) /
+                               (group_height + group_y_gap))
+        group_distribution_on_rows: list = self._equal_bin_packing(num_group, max_rows_allowed, max_groups_allowed_per_row)
+        num_group_row = len(group_distribution_on_rows)
         total_height_needed = (num_group_row * (group_height + group_y_gap)) + answer_section_label_height + lettering_height
-        if total_height_needed > available_height:
-            # Recalculate metrics based on limitations
-            num_group_row = int((available_height - answer_section_label_height) / (group_height + group_y_gap))
-            # If group height go past limit, reduce number of questions per group
-            if num_group_row < 1:
-                questions_per_group = int(
-                    (available_height - answer_section_label_height - group_y_gap - lettering_height)
-                    / self.question_height)
-                num_group_row = 1
-                group_height = self.question_height * questions_per_group
-                print(f"Warning: height constraint, limiting to {questions_per_group} questions per group.")
-
-            num_group = num_group_row * max_groups_allowed_per_row
-            num_questions = num_group * questions_per_group
-            group_distribution_on_rows: list[int] = [max_groups_allowed_per_row] * num_group_row
-            print(f"Warning: insufficient height, limiting to {num_questions} questions.")
-
-            total_height_needed = (num_group_row * (group_height + group_y_gap)) + answer_section_label_height
-            assert total_height_needed <= available_height, "answer section height calibration failed"
-
-        # If enough vertical space, try to spread groups evenly across rows
-        else:
-            max_rows_allowed = int((available_height - answer_section_label_height - lettering_height) / (group_height + group_y_gap))
-            group_distribution_on_rows: list = self._equal_bin_packing(num_group, max_rows_allowed, max_groups_allowed_per_row)
-            num_group_row = len(group_distribution_on_rows)
-            total_height_needed = (num_group_row * (group_height + group_y_gap)) + answer_section_label_height + lettering_height
 
         # 4. Optimize spacing
         # Assign spare horizontal space
@@ -307,7 +274,7 @@ class AnswerSheetGenerator:
                 # If there is enough space, each row has 1 more group
                 if (group_x_gap * (groups_on_row - 1) > group_width * 1.5
                     and num_group_row > 1
-                    and num_group_row > group_distribution_on_rows[num_group_row - 1]):  # noqa: E129
+                    and num_group_row > group_distribution_on_rows[num_group_row - 1]):
                     new_distribution = group_distribution_on_rows[:-1].copy()
                     new_distribution.sort()
                     for j in range(group_distribution_on_rows[num_group_row - 1]):

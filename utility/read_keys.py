@@ -60,10 +60,14 @@ def _parse_row(row: pd.Series) -> Tuple[Optional[Dict], Optional[str]]:
         answer_str = str(row['answer']).strip()
         answers = [a.strip().upper() for a in answer_str.split(',') if a.strip()]
 
+        # Handle empty score values by defaulting to 1.0
+        score_val = row['score']
+        score = 1.0 if pd.isna(score_val) or str(score_val).strip() == '' else float(score_val)
+
         return {
             'question': int(row['question']),
             'answer': answers,
-            'score': float(row['score'])
+            'score': score
         }, None
     except Exception as e:
         return None, f"Row {row.name + 1}: Failed to parse data - {str(e)}"
@@ -88,4 +92,3 @@ def _validate_row(parsed_row: Dict, row_num: int) -> Optional[str]:
         return f"Row {row_num}: Duplicate answers {answers}."
 
     return None
-

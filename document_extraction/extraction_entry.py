@@ -56,11 +56,10 @@ def extract(input_img, template=None, visualize=False):
     line_length = dt_stt.page_width - dt_stt.margin * 2
     txt_qr_ratio = (dt_stt.txt_label_width + dt_stt.txt_field_width + line_length - dt_stt.qr_size) / 2 / line_length
 
-    roi_coords, *_ = roi.find_roi_from_inner(warped_photo, content_corners, txt_qr_ratio, visualize=visualize)
+    roi_coords, _ = roi.find_roi_from_inner(warped_photo, content_corners, txt_qr_ratio, visualize=visualize)
     roi_coords = roi.crop_roi(roi_coords, int(brush_px * 2))
     if visualize:
-        viz['content'] = _[0].copy()
-        viz['content_opn'] = _[1].copy()
+        viz['content'] = _.copy()
 
     # 5. find text box, extract text w CCA
     # First detect the text field rectangles
