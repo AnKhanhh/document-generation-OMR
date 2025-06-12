@@ -3,6 +3,7 @@ import cv2
 from typing import List, Tuple, Dict, Optional
 from dataclasses import dataclass
 
+
 # TODO: implement fallback
 
 @dataclass
@@ -224,6 +225,10 @@ def extract_answer(img: np.ndarray,
             question_no += 1
 
     print(f"Successfully extracted {len(answers)}/{num_questions} questions,"
-          f" {partial_count} bubbles are partially filled,"
-          f" {len(flagged_rects)} question groups are flagged")
+          f" {partial_count} bubbles are partially filled,", end="")
+    if len(flagged_rects) == 0:
+        print("no question groups are flagged")
+    else:
+        print(f"question groups # {list(flagged_rects.keys())} are flagged")
+
     return answers, flagged_rects

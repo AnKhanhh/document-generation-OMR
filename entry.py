@@ -52,11 +52,11 @@ def generate_document(num_questions: int = 60,
     sheet_id = id_generator.generate()
 
     generator = AnswerSheetGenerator()
-    path, _ = generator.generate_answer_sheet(num_questions=num_questions,
-                                              choices_per_question=choices_per_question,
-                                              questions_per_group=questions_per_group,
-                                              sheet_id=sheet_id,
-                                              filename="deploy.pdf")
+    generator.generate_answer_sheet(num_questions=num_questions,
+                                    choices_per_question=choices_per_question,
+                                    questions_per_group=questions_per_group,
+                                    sheet_id=sheet_id,
+                                    filename="deploy.pdf")
     if keys is None:
         keys = []
     answer_keys = AnswerKeys()
@@ -77,9 +77,9 @@ def generate_document(num_questions: int = 60,
     return path, sheet_id
 
 
-def generate_lab_test(num_questions: int = 47,
+def generate_lab_test(num_questions: int = 48,
                       questions_per_group: int = 4,
-                      choices_per_question: int = 5):
+                      choices_per_question: int = 4):
     from utility.id_gen import IDGenerator
     sheet_id = IDGenerator().generate()
 
@@ -88,14 +88,14 @@ def generate_lab_test(num_questions: int = 47,
                                choices_per_question=choices_per_question,
                                questions_per_group=questions_per_group,
                                sheet_id=sheet_id,
-                               filename="filled.pdf")
+                               filename=f"filled_{sheet_id}.pdf")
 
     template_sheet = AnswerSheetGenerator()
     template_sheet.generate_answer_sheet(num_questions=num_questions,
                                          choices_per_question=choices_per_question,
                                          questions_per_group=questions_per_group,
                                          sheet_id=sheet_id,
-                                         filename="pristine.pdf")
+                                         filename=f"pristine_{sheet_id}.pdf")
     convert_pdfs_to_images("out/pdf", "out/image", ext="png", zoom=3)
 
     from utility.misc import generate_answer_keys
@@ -113,15 +113,15 @@ def generate_lab_test(num_questions: int = 47,
           f" layout = {db_metrics_log['static_metrics']},"
           f" answers ID = {db_metrics_log['answer_keys']}")
 
-    from document_extraction.distortion import DocumentDistorter
-    template = cv2.imread("out/image/pristine.png", cv2.IMREAD_COLOR)
-    distorted = cv2.imread("out/image/filled.png", cv2.IMREAD_COLOR)
-    distorter = DocumentDistorter()
-    distorted = distorter.apply_perspective_distortion(distorted, severity=0.6)
-    distorted = distorter.apply_rotation(distorted, angle=50)
-    distorted = distorter.apply_lighting_variation(distorted, contrast_factor=1, max_shadow=0.5)
-    distorted = distorter.apply_noise(distorted, 0.1)
-    cv2.imwrite("out/image/filled_distorted.png", distorted)
+    # from document_extraction.distortion import DocumentDistorter
+    # template = cv2.imread(f"out/image/pristine_{sheet_id}", cv2.IMREAD_COLOR)
+    # distorted = cv2.imread(f"out/image/filled_{sheet_id}.png", cv2.IMREAD_COLOR)
+    # distorter = DocumentDistorter()
+    # distorted = distorter.apply_perspective_distortion(distorted, severity=0.6)
+    # distorted = distorter.apply_rotation(distorted, angle=50)
+    # distorted = distorter.apply_lighting_variation(distorted, contrast_factor=1, max_shadow=0.5)
+    # distorted = distorter.apply_noise(distorted, 0.1)
+    # cv2.imwrite("out/image/filled_distorted.png", distorted)
 
 
 def clean_directory(directory: str) -> None:
@@ -147,20 +147,20 @@ if __name__ == "__main__":
     init_result = DatabaseBridge.initialize()
     print(init_result)
 
-    # os.makedirs("out/image", exist_ok=True)
-    # os.makedirs("out/vis_detection", exist_ok=True)
-    # os.makedirs("out/pdf", exist_ok=True)
+    os.makedirs("out/image", exist_ok=True)
+    os.makedirs("out/vis_detection", exist_ok=True)
+    os.makedirs("out/pdf", exist_ok=True)
 
-    # clean_directory("out/image")
-    # clean_directory("out/vis_detection")
-    # clean_directory("out/pdf")
+    clean_directory("out/image")
+    clean_directory("out/vis_detection")
+    clean_directory("out/pdf")
 
-    # generate_lab_test(num_questions=60, questions_per_group=4, choices_per_question=4)
+    generate_lab_test(num_questions=48, questions_per_group=4, choices_per_question=4)
 
     photo = cv2.imread("out/image/filled_distorted.jpg", cv2.IMREAD_GRAYSCALE)
     template = cv2.imread("out/image/pristine.png", cv2.IMREAD_GRAYSCALE)
     init_result = DatabaseBridge.initialize()
-    warped, viz = extraction.extract(photo, template, visualize=False)
+    warped, viz = extraction.extract(photo, template, visualize=True)
 
     cv2.imwrite("out/image/filled_corrected.png", warped)
 
