@@ -11,9 +11,10 @@ import document_extraction.find_text as text
 import document_extraction.find_group as group
 import document_extraction.find_bubble as bubble
 from document_extraction.read_qr import parse_qr
+from utility.grading import grade_student_answers
 
 
-def extract(input_img, template=None, visualize=False):
+def extract(input_img, template=None, visualize=False, summary_buffer=None, grading_config=None):
     if len(input_img.shape) != 2:
         input_img = cv2.cvtColor(input_img, cv2.COLOR_BGR2GRAY)
     if len(template.shape) != 2:
@@ -125,10 +126,9 @@ def extract(input_img, template=None, visualize=False):
     if len(student_answers) != dt_dyn.num_questions:
         pass
 
-    from utility.misc import grade_student_answers
     # Only grade student for printed questions
     answer_keys = [d for d in dt_ans if d['question'] <= dt_dyn.num_questions]
-    score, grading = grade_student_answers(answer_keys, student_answers)
+    score, grading = grade_student_answers(answer_keys, student_answers, grading_config)
 
     from document_generation.summary import SummaryGeneration
     summary = SummaryGeneration(
@@ -139,10 +139,13 @@ def extract(input_img, template=None, visualize=False):
         answer_sheet_image=warped_photo,
         bounding_boxes=text_bounding_coords
     )
-    summary.generate_pdf("out/pdf/summary.pdf")
+    if summary_buffer is None:
+        summary.generate_pdf("out/pdf/summary.pdf")
+    else:
+        summary.generate_pdf(summary_buffer)
 
     print(f"Extraction pipeline complete:"
           f" {len(text_bounding_coords)}/3 text box located,"
           f" {len(grading)}/{dt_dyn.num_questions} questions graded,"
-          f" additional visualizations are {'returned' if visualize else 'discarded'}.")
+          f" additional visualizations are {'saved locally' if visualize else 'discarded'}.")
     return warped_photo, viz

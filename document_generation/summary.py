@@ -135,19 +135,19 @@ class SummaryGeneration:
         elements.append(table)
         return elements
 
-    def generate_pdf(self, filename):
+    def generate_pdf(self, output):
         """Generate the complete PDF summary"""
-        doc = SimpleDocTemplate(filename, pagesize=letter)
+        doc = SimpleDocTemplate(output, pagesize=letter)
         story = []
-
-        # Build document
         story.extend(self._create_header())
         story.extend(self._create_cropped_images_section())
         story.append(Spacer(1, 20))
         story.extend(self._create_grading_table())
 
         doc.build(story)
-        print(f"PDF generated: {filename}")
+
+        if isinstance(output,str):
+            print(f"PDF generated: {output}")
 
 # Example:
 # summary = SummaryGeneration(

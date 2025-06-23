@@ -1,5 +1,6 @@
 import io
 
+import cv2
 import streamlit as st
 
 from DB_bridging.database_bridge import DatabaseBridge
@@ -7,6 +8,7 @@ from DB_bridging.models import AnswerKeys
 from document_extraction.extraction_entry import extract
 from document_generation.layout_1_limits import AnswerSheetLayoutValidator, LayoutConstraints
 from document_generation.layout_one import AnswerSheetGenerator
+from utility.grading import GradingConfig
 from utility.id_gen import IDGenerator
 from utility.read_template import file_to_grayscale
 from utility.ui_utils import pdf_stream_2_img
@@ -37,27 +39,27 @@ tab1, tab2 = st.tabs(["Generator", "Extractor"])
 
 # Generator tab
 with tab1:
-    a_valid, b_valid, c_valid = False, False, False
+    q_valid, c_valid, g_valid = False, False, False
     # Step 1: input choices and groupings
     st.header("1. First, define answer sheet parameters")
-    col2, col3 = st.columns(2)
+    col_choice, col_group = st.columns(2)
 
-    with col2:
-        b = st.number_input("Choices", min_value=2, max_value=26, value=4,
-                            help="Number of choices per question")
+    with col_choice:
+        val_choice = st.number_input("Choices", min_value=2, max_value=26, value=4,
+                                     help="Number of choices per question")
 
-    with col3:
-        c = st.number_input("Groupings", min_value=1, value=5,
-                            help="Number of questions per group")
+    with col_group:
+        val_group = st.number_input("Groupings", min_value=1, value=5,
+                                    help="Number of questions per group")
 
-    b_valid, b_limit = st.session_state['validator'].validate_choices_per_question(b)
-    c_valid, c_limit = st.session_state['validator'].validate_questions_per_group(c)
-    col2.write("✓" if b_valid else f"Invalid: question can hold {b_limit} choices maximum")
-    col3.write("✓" if c_valid else f"Invalid: group can hold {c_limit} questions maximum")
-    b_c_valid = b_valid and c_valid
+    c_valid, c_limit = st.session_state['validator'].validate_choices_per_question(val_choice)
+    g_valid, g_limit = st.session_state['validator'].validate_questions_per_group(val_group)
+    col_choice.write("✓" if c_valid else f"Invalid: question can hold {c_limit} choices maximum")
+    col_group.write("✓" if g_valid else f"Invalid: group can hold {g_limit} questions maximum")
+    b_c_valid = c_valid and g_valid
 
     # Step 2: input number of questions
-    a = st.number_input(
+    val_question = st.number_input(
         "Questions",
         min_value=1,
         disabled=not b_c_valid,
@@ -65,9 +67,9 @@ with tab1:
     )
 
     if b_c_valid:
-        a_valid, a_limit = st.session_state['validator'].validate_questions_num(a, b, c)
-        st.write(f"✓" if a_valid else f"Invalid: page dimensions allow {a_limit} questions maximum")
-        if a_valid:
+        q_valid, a_limit = st.session_state['validator'].validate_questions_num(val_question, val_choice, val_group)
+        st.write(f"✓" if q_valid else f"Invalid: page dimensions allow {a_limit} questions maximum")
+        if q_valid:
             st.success(f"✓ All input parameters validated")
 
     # Step 3: input answer key
@@ -77,7 +79,7 @@ with tab1:
     from utility.read_keys import load_dataframe, dataframe_to_answer_keys
 
     key_file = st.file_uploader("Answer Keys", type=['csv', 'xlsx', 'xls'],
-                                disabled=not a_valid,
+                                disabled=not q_valid,
                                 help="A valid answer key file must have 3 following columns: | question | answer | score |."
                                      " Cells under 'score' can be left empty, in which case default_score=1."
                                      " Answers must be letters, and comma-separated.")
@@ -89,9 +91,9 @@ with tab1:
             answer_keys, process_error = dataframe_to_answer_keys(df)
             if process_error:
                 st.error(process_error)
-            elif len(answer_keys) != a:
-                st.error(f"Length mismatch: {len(answer_keys)} answer key entries, expected {a}!")
-            elif not all(d['question'] <= a for d in answer_keys):
+            elif len(answer_keys) != val_question:
+                st.error(f"Length mismatch: {len(answer_keys)} answer key entries, expected {val_question}!")
+            elif not all(d['question'] <= val_question for d in answer_keys):
                 st.error(f"Invalid entry: out-of-bound question number")
             else:
                 st.session_state["answer_keys"] = answer_keys
@@ -104,11 +106,11 @@ with tab1:
             st.warning("Please upload a valid answer key file")
         else:
             # Generate sheet
-            buffer = io.BytesIO()
+            buffer_gen_pdf = io.BytesIO()
             template_sheet = AnswerSheetGenerator()
             template_sheet.generate_answer_sheet(
-                num_questions=a, choices_per_question=b, questions_per_group=c,
-                buffer=buffer,
+                num_questions=val_question, choices_per_question=val_choice, questions_per_group=val_group,
+                buffer=buffer_gen_pdf,
                 sheet_id=st.session_state['id_gen'].generate()
             )
             # Save data into DB
@@ -119,8 +121,8 @@ with tab1:
                                                                   template_sheet.dynamic_metrics)
             print(f"Saved to DB with id = {db_metrics_log['dynamic_metrics']}")
             # Serve generated sheet
-            st.session_state['sheet_pdf'] = buffer.getvalue()
-            st.session_state['template_img'] = pdf_stream_2_img(buffer.getvalue())
+            st.session_state['sheet_pdf'] = buffer_gen_pdf.getvalue()
+            st.session_state['template_img'] = pdf_stream_2_img(buffer_gen_pdf.getvalue())
             st.success("Answer sheet ready for download!")
 
     # Show download buttons if files exist in session state
@@ -143,6 +145,7 @@ with tab1:
     else:
         st.error("Debug: Missing session parameter")
 
+    # Synth data test
     st.divider()
     st.header("3. Or run an integration test")
     st.text("The integration test will:")
@@ -156,6 +159,7 @@ with tab1:
 
 # Extractor tab
 with tab2:
+    # Upload images
     st.header("1. First, upload the template and student answer sheet:")
     template = st.file_uploader("Template Image", type=['png', 'jpg', 'jpeg', 'pdf'])
     if template:
@@ -165,17 +169,56 @@ with tab2:
     if student_sheet:
         gray_photo = file_to_grayscale(student_sheet)
 
+    # Config grading
     st.header("2. Then, customize the grading behavior:")
-    partial = st.checkbox("Give point to partially correct questions")
-    if st.checkbox("Deduct point from wrong questions"):
-        if st.checkbox("by a set amount"):
-            pass
-        st.caption("or")
-        if st.checkbox("based on the question's score"):
-            pass
+    partial = st.checkbox("Give points to partially correct answers")
+    deduct = st.checkbox("Deduct points for wrong answers")
+    if deduct:
+        option = st.radio("choose how points are deducted for each wrong answer:", ["Static", "Proportional"], index=0)
+
+        col_static_lbl, col_static_input = st.columns([3, 1])
+        with col_static_lbl:
+            st.write("By set amount of points")
+        with col_static_input:
+            val_static = st.number_input(label="lorem ipsum", value=1, min_value=1,
+                                         disabled=option != "Static",
+                                         label_visibility="collapsed")
+
+        col_dynamic_lbl, col_dynamic_input = st.columns([3, 1])
+        with col_dynamic_lbl:
+            st.write("Proportional to the question's score")
+        with col_dynamic_input:
+            val_dynamic = st.number_input(label="lorem ipsum", min_value=0.01, max_value=1.0, value=0.5, step=0.01,
+                                          disabled=option != "Proportional",
+                                          label_visibility="collapsed")
+
+    # Init extraction
     if st.button("Grade answer sheet"):
-        summary_pdf = load_file("out/pdf/summary.pdf")
-        st.success("Grading complete, result ready for download!")
-        corrected_photo, viz = extract(gray_photo, gray_template, visualize=False)
-        st.image(corrected_photo, caption="Aligned input photo")
-        st.download_button("Download report 📄", data=summary_pdf, file_name="summary.pdf")
+        grading_config = GradingConfig(allow_partial_credit=partial)
+
+        if deduct:
+            grading_config.enable_deduction = True
+            if option == "Proportional":
+                grading_config.deduction_is_relative = True
+                grading_config.deduction_amount = val_dynamic
+            else:
+                grading_config.deduction_is_relative = False
+                grading_config.deduction_amount = val_static
+
+        buffer_sum_pdf = io.BytesIO()
+        with st.spinner("Extracting... Please wait"):
+            corrected_photo, viz = extract(gray_photo, gray_template,
+                                           visualize=True,
+                                           summary_buffer=buffer_sum_pdf,
+                                           grading_config=grading_config)
+            if viz is not None:
+                for k, v in viz.items():
+                    cv2.imwrite(f"out/vis_detection/{k}.png", v)
+            st.session_state['summary_pdf'] = buffer_sum_pdf.getvalue()
+            st.success("Grading complete, result ready for download!")
+
+    if 'summary_pdf' in st.session_state:
+        st.download_button("Download report 📄", data=st.session_state['summary_pdf'], file_name="summary.pdf")
+        if st.button("Clear"):
+            del st.session_state["summary_pdf"]
+            st.rerun()

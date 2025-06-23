@@ -75,7 +75,7 @@ def detect_text_boxes(image, roi_corners, brush_thickness, visualize=False):
 
         print(f"Clustered into {len(clustered_lines)} line groups")
         for i, line in enumerate(clustered_lines):
-            print(f"  C #{i+1}: y={line[4]:.2f}, length={line[5]:.2f} px")
+            print(f"  C #{i + 1}: y={line[4]:.2f}, length={line[5]:.2f} px")
 
         # Interpolation fallback
         if len(clustered_lines) == 5:
@@ -134,8 +134,8 @@ def detect_text_boxes(image, roi_corners, brush_thickness, visualize=False):
 
     # Visualization
     morph_vis = cv2.cvtColor(morph, cv2.COLOR_GRAY2BGR) if visualize else None
-    annotated = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR) if visualize and len(image.shape) == 2\
-        else image.copy() if visualize\
+    annotated = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR) if visualize and len(image.shape) == 2 \
+        else image.copy() if visualize \
         else None
 
     if visualize and annotated is not None:
@@ -194,10 +194,10 @@ def remove_box_lines(image, text_boxes, brush_thickness, margin=0):
 
         # 2. Apply morphological opening to detect box edges in masked area
         # Vertical lines
-        vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, int(brush_thickness * 1.5)))
+        vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, int(brush_thickness * 2)))
         vertical_lines = cv2.morphologyEx(edges_only, cv2.MORPH_OPEN, vertical_kernel)
         # Horizontal lines
-        horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (int(brush_thickness * 1.5), 1))
+        horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (int(brush_thickness * 2), 1))
         horizontal_lines = cv2.morphologyEx(edges_only, cv2.MORPH_OPEN, horizontal_kernel)
         # Combine
         all_lines = cv2.bitwise_or(vertical_lines, horizontal_lines)
@@ -263,23 +263,19 @@ def detect_text_bounding_boxes(text_rois, roi_coordinates, brush_thickness, min_
         # Get the ROI top-left corner
         roi_x, roi_y = roi_coord[0]
 
-        # Apply connected component analysis
-        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
-            roi, connectivity=8
-        )
+        # Apply CCA
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(roi, connectivity=8)
 
-        # Filter based on area, skip background label 0
+        # Filter based on area, skip label 0
         valid_components = []
         for i in range(1, num_labels):
             area = stats[i, cv2.CC_STAT_AREA]
             width = stats[i, cv2.CC_STAT_WIDTH]
             height = stats[i, cv2.CC_STAT_HEIGHT]
 
-            # Basic size filtering
             if area < min_component_area:
                 continue
 
-            # Aspect ratio filtering (exclude extremely thin horizontal/vertical lines)
             aspect_ratio = width / max(height, 1)
             if aspect_ratio > 10 or aspect_ratio < 0.1:
                 continue
@@ -405,4 +401,9 @@ def detect_text_bounding_boxes(text_rois, roi_coordinates, brush_thickness, min_
                 # 5. Implement word segmentation within text lines
 
     print(f"Detected {len(text_coords)}/3 text region")
+    for i, box in enumerate(text_coords):
+        print(f"region #{i + 1}:", end=" ")
+        for j, corner in enumerate(box):
+            print(f"({corner[0]}, {corner[1]})", end=" ")
+        print()
     return text_boxes, text_coords
