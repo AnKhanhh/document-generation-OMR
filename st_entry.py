@@ -105,6 +105,9 @@ with tab1:
         if st.session_state.get('answer_keys') is None:
             st.warning("Please upload a valid answer key file")
         else:
+            if val_group > val_question:
+                st.warning(f"Group size exceed number of questions, reduced to {val_question}")
+                val_group = val_question
             # Generate sheet
             buffer_gen_pdf = io.BytesIO()
             template_sheet = AnswerSheetGenerator()
@@ -119,11 +122,10 @@ with tab1:
             db_metrics_log = DatabaseBridge.create_complete_sheet(template_sheet.static_metrics,
                                                                   key_model,
                                                                   template_sheet.dynamic_metrics)
-            print(f"Saved to DB with id = {db_metrics_log['dynamic_metrics']}")
             # Serve generated sheet
             st.session_state['sheet_pdf'] = buffer_gen_pdf.getvalue()
             st.session_state['template_img'] = pdf_stream_2_img(buffer_gen_pdf.getvalue())
-            st.success("Answer sheet ready for download!")
+            st.success(f"Answer sheet ready for download! Layout metrics saved to BD with uuid {db_metrics_log['dynamic_metrics']}")
 
     # Show download buttons if files exist in session state
     if 'sheet_pdf' in st.session_state and 'template_img' in st.session_state:
@@ -142,8 +144,6 @@ with tab1:
             del st.session_state['sheet_pdf']
             del st.session_state['template_img']
             st.rerun()
-    else:
-        st.error("Debug: Missing session parameter")
 
     # Synth data test
     st.divider()
