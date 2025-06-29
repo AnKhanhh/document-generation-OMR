@@ -301,7 +301,8 @@ def find_roi_from_inner(image: np.ndarray, coords: List[np.ndarray],
     # Step 2: Detect lines
     lines, _, _ = detect_lines_hough(binary, metadata, visualize=False)
     if not lines:
-        raise ValueError("No horizontal lines detected on answer sheet")
+        print("No horizontal lines detected on answer sheet")
+        return [], np.ndarray()
 
     # Step 3: Cluster lines
     clusters = cluster_lines(lines, visualize=False)

@@ -74,14 +74,14 @@ def generate_document(num_questions: int = 60,
 
     convert_pdfs_to_images("out/pdf", "out/image", ext="png", zoom=3)
 
-    return path, sheet_id
-
 
 def generate_lab_test(num_questions: int = 48,
                       questions_per_group: int = 4,
-                      choices_per_question: int = 4):
-    from utility.id_gen import IDGenerator
-    sheet_id = IDGenerator().generate()
+                      choices_per_question: int = 4,
+                      sheet_id: str = None):
+    if sheet_id is None:
+        from utility.id_gen import IDGenerator
+        sheet_id = IDGenerator().generate()
 
     AnswerSheetGenerator(fill_in=True) \
         .generate_answer_sheet(num_questions=num_questions,
@@ -101,7 +101,7 @@ def generate_lab_test(num_questions: int = 48,
     from utility.misc import generate_answer_keys
     from DB_bridging.models import AnswerKeys
     answer_keys = AnswerKeys()
-    answer_keys.set_answers(generate_answer_keys(num_questions, questions_per_group))
+    answer_keys.set_answers(generate_answer_keys(num_questions=num_questions, choices_per_question=choices_per_question))
 
     db_metrics_log = DatabaseBridge.create_complete_sheet(
         template_sheet.static_metrics,
@@ -113,15 +113,14 @@ def generate_lab_test(num_questions: int = 48,
           f" layout = {db_metrics_log['static_metrics']},"
           f" answers ID = {db_metrics_log['answer_keys']}")
 
-    # from document_extraction.distortion import DocumentDistorter
-    # template = cv2.imread(f"out/image/pristine_{sheet_id}", cv2.IMREAD_COLOR)
-    # distorted = cv2.imread(f"out/image/filled_{sheet_id}.png", cv2.IMREAD_COLOR)
-    # distorter = DocumentDistorter()
-    # distorted = distorter.apply_perspective_distortion(distorted, severity=0.6)
-    # distorted = distorter.apply_rotation(distorted, angle=50)
-    # distorted = distorter.apply_lighting_variation(distorted, contrast_factor=1, max_shadow=0.5)
-    # distorted = distorter.apply_noise(distorted, 0.1)
-    # cv2.imwrite("out/image/filled_distorted.png", distorted)
+    from document_extraction.distortion import DocumentDistorter
+    distorted = cv2.imread(f"out/image/filled_{sheet_id}.png", cv2.IMREAD_COLOR)
+    distorter = DocumentDistorter()
+    distorted = distorter.apply_perspective_distortion(distorted, severity=0.6)  # severity 0.0-1.0
+    distorted = distorter.apply_rotation(distorted, angle=50)  # angle 0-360
+    distorted = distorter.apply_lighting_variation(distorted, contrast_factor=1, max_shadow=0.5)  # shadow 0.0-1.0
+    distorted = distorter.apply_noise(distorted, amount=0.1)  # amount takes any value, is std dev
+    cv2.imwrite(f"out/image/filled_distorted_{sheet_id}.png", distorted)
 
 
 def clean_directory(directory: str) -> None:
@@ -151,18 +150,21 @@ if __name__ == "__main__":
     os.makedirs("out/vis_detection", exist_ok=True)
     os.makedirs("out/pdf", exist_ok=True)
 
-    clean_directory("out/image")
-    clean_directory("out/vis_detection")
-    clean_directory("out/pdf")
+    # clean_directory("out/image")
+    # clean_directory("out/vis_detection")
+    # clean_directory("out/pdf")
 
-    generate_lab_test(num_questions=48, questions_per_group=4, choices_per_question=4)
+    # from utility.id_gen import IDGenerator
+    # sheet_id = IDGenerator().generate()
+    sheet_id = "101"
+    generate_lab_test(num_questions=48, questions_per_group=4, choices_per_question=4,sheet_id=sheet_id)
 
-    photo = cv2.imread("out/image/filled_distorted.jpg", cv2.IMREAD_GRAYSCALE)
-    template = cv2.imread("out/image/pristine.png", cv2.IMREAD_GRAYSCALE)
+    photo = cv2.imread(f"out/image/filled_distorted_{sheet_id}.png", cv2.IMREAD_GRAYSCALE)
+    template = cv2.imread(f"out/image/pristine_{sheet_id}.png", cv2.IMREAD_GRAYSCALE)
     init_result = DatabaseBridge.initialize()
     warped, viz = extraction.extract(photo, template, visualize=True)
 
-    cv2.imwrite("out/image/filled_corrected.png", warped)
+    cv2.imwrite(f"out/image/filled_corrected_{sheet_id}.png", warped)
 
     if viz is not None:
         for k, v in viz.items():

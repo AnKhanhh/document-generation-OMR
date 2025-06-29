@@ -10,19 +10,30 @@ from document_generation.layout_1_limits import AnswerSheetLayoutValidator, Layo
 from document_generation.layout_one import AnswerSheetGenerator
 from utility.grading import GradingConfig
 from utility.id_gen import IDGenerator
+from utility.misc import generate_answer_keys
 from utility.read_template import file_to_grayscale
-from utility.ui_utils import pdf_stream_2_img
+from utility.ui_utils import pdf_stream_2_img, process_distortion, pdf_stream_2_cv2_gray
 
 
-def load_file(file_path):
-    try:
-        with open(file_path, "rb") as f:
-            return f.read()
-    except FileNotFoundError:
-        st.error(f"File not found: {file_path}")
-        return None
+def render_config(show: bool) -> dict:
+    """Render config controls or return defaults"""
+    params = {}
+    for key, (label, default, min_val, max_val, step) in DISTORTION_CONFIG.items():
+        if show:
+            params[key] = st.slider(label, min_val, max_val, default, step)
+        else:
+            params[key] = default
+    return params
 
 
+DISTORTION_CONFIG = {
+    'severity': ('Perspective Severity', 0.6, 0.0, 1.0, 0.01),
+    'angle': ('Rotation Angle', 50, 0, 360, 1),
+    'max_shadow': ('Shadow Intensity', 0.5, 0.0, 1.0, 0.01),
+    'amount': ('Noise Amount', 0.1, 0.0, 2.0, 0.01)  # 2.0 allows reasonable noise range
+}
+
+# Initialize global persistent variables
 if 'validator' not in st.session_state:
     st.session_state['validator'] = AnswerSheetLayoutValidator(LayoutConstraints())
 if 'id_gen' not in st.session_state:
@@ -39,8 +50,9 @@ tab1, tab2 = st.tabs(["Generator", "Extractor"])
 
 # Generator tab
 with tab1:
-    q_valid, c_valid, g_valid = False, False, False
+    # ==========================================================================================
     # Step 1: input choices and groupings
+    q_valid, c_valid, g_valid = False, False, False
     st.header("1. First, define answer sheet parameters")
     col_choice, col_group = st.columns(2)
 
@@ -70,6 +82,9 @@ with tab1:
         q_valid, a_limit = st.session_state['validator'].validate_questions_num(val_question, val_choice, val_group)
         st.write(f"✓" if q_valid else f"Invalid: page dimensions allow {a_limit} questions maximum")
         if q_valid:
+            if val_group > val_question:
+                st.warning(f"Group size exceed number of questions, reduced to {val_question}")
+                val_group = val_question
             st.success(f"✓ All input parameters validated")
 
     # Step 3: input answer key
@@ -100,14 +115,12 @@ with tab1:
                 st.success(f"Loaded {len(answer_keys)} key entries.")
                 # st.json(answer_keys[:1])
 
+    # ==========================================================================================
     # Generation output
     if st.button("Generate"):
         if st.session_state.get('answer_keys') is None:
             st.warning("Please upload a valid answer key file")
         else:
-            if val_group > val_question:
-                st.warning(f"Group size exceed number of questions, reduced to {val_question}")
-                val_group = val_question
             # Generate sheet
             buffer_gen_pdf = io.BytesIO()
             template_sheet = AnswerSheetGenerator()
@@ -125,7 +138,7 @@ with tab1:
             # Serve generated sheet
             st.session_state['sheet_pdf'] = buffer_gen_pdf.getvalue()
             st.session_state['template_img'] = pdf_stream_2_img(buffer_gen_pdf.getvalue())
-            st.success(f"Answer sheet ready for download! Layout metrics saved to BD with uuid {db_metrics_log['dynamic_metrics']}")
+            st.success(f"Answer sheet ready for download! Layout metrics saved to BD with uuid {db_metrics_log['instance_id']}")
 
     # Show download buttons if files exist in session state
     if 'sheet_pdf' in st.session_state and 'template_img' in st.session_state:
@@ -145,17 +158,69 @@ with tab1:
             del st.session_state['template_img']
             st.rerun()
 
+    # ==========================================================================================
     # Synth data test
+    # Configuration mapping: param_name -> (label, default, min, max, step)
+
     st.divider()
     st.header("3. Or run an integration test")
     st.text("The integration test will:")
     st.text("- Generate random answer keys")
     st.text("- Generate random student sheets")
     st.text("- Extract data from student sheet, grade and export result")
-    if st.checkbox("Customize the distortion module behavior:"):
-        pass
+    config_distortion = st.checkbox("Configure parameters for synthetic document distortion", value=False)
+    params = render_config(config_distortion)
     if st.button("Run test on program pipeline"):
-        pass
+        # Generate synthetic input - template
+        with st.spinner("Generating synthetic input..."):
+            buffer_gen_pdf = io.BytesIO()
+            template_sheet = AnswerSheetGenerator()
+            shared_sheet_id = st.session_state['id_gen'].generate()
+            template_sheet.generate_answer_sheet(
+                num_questions=val_question, choices_per_question=val_choice, questions_per_group=val_group,
+                buffer=buffer_gen_pdf,
+                sheet_id=shared_sheet_id
+            )
+            key_model = AnswerKeys()
+            key_model.set_answers(generate_answer_keys(num_questions=val_question, choices_per_question=val_choice))
+            db_metrics_log = DatabaseBridge.create_complete_sheet(template_sheet.static_metrics,
+                                                                  key_model,
+                                                                  template_sheet.dynamic_metrics)
+            print(f"Layout metrics saved to BD with uuid {db_metrics_log['instance_id']}")
+            st.session_state['template_pdf'] = buffer_gen_pdf.getvalue()
+            template_img = pdf_stream_2_cv2_gray(buffer_gen_pdf.getvalue())
+            # Generate synthetic input - student sheet
+            buffer_gen_synth = io.BytesIO()
+            synthetic_sheet = AnswerSheetGenerator(fill_in=True)
+            synthetic_sheet.generate_answer_sheet(
+                num_questions=val_question, choices_per_question=val_choice, questions_per_group=val_group,
+                buffer=buffer_gen_synth,
+                sheet_id=shared_sheet_id
+            )
+            distorted_filled = process_distortion(buffer_gen_synth.getvalue(), **params)
+            st.session_state['distorted_filled'] = cv2.cvtColor(distorted_filled, cv2.COLOR_BGR2GRAY)
+        # Extract and grade on the spot
+        with st.spinner("Performing extraction on synthesized input..."):
+            buffer_sum_pdf = io.BytesIO()
+            corrected_photo, viz = extract(st.session_state['distorted_filled'], template_img,
+                                           visualize=False,
+                                           summary_buffer=buffer_sum_pdf)
+            st.session_state['summary_synth'] = buffer_sum_pdf.getvalue()
+        st.success("Successfully generated and extracted synthetic data")
+
+    if ('distorted_filled' in st.session_state) and ('template_pdf' in st.session_state) and ('summary_synth' in st.session_state):
+        st.image(st.session_state['distorted_filled'], caption="Synthetic input answer sheet")
+        col_pdf_synth, col_img_synth = st.columns(2)
+        with col_pdf_synth:
+            st.download_button("Template answer sheet 📄", data=st.session_state['template_pdf'], file_name="template.pdf")
+        with col_img_synth:
+            st.download_button("Extraction result 📄", data=st.session_state['summary_synth'], file_name="summary.pdf")
+
+        if st.button('Clear'):
+            del st.session_state['distorted_filled']
+            del st.session_state['template_pdf']
+            del st.session_state['summary_synth']
+            st.rerun()
 
 # Extractor tab
 with tab2:
