@@ -52,7 +52,7 @@ tab1, tab2 = st.tabs(["Generator", "Extractor"])
 with tab1:
     # ==========================================================================================
     # Step 1: input choices and groupings
-    q_valid, c_valid, g_valid = False, False, False
+    q_valid, c_valid, g_valid, k_valid = False, False, False, False
     st.header("1. First, define answer sheet parameters")
     col_choice, col_group = st.columns(2)
 
@@ -68,17 +68,17 @@ with tab1:
     g_valid, g_limit = st.session_state['validator'].validate_questions_per_group(val_group)
     col_choice.write("✓" if c_valid else f"Invalid: question can hold {c_limit} choices maximum")
     col_group.write("✓" if g_valid else f"Invalid: group can hold {g_limit} questions maximum")
-    b_c_valid = c_valid and g_valid
+    c_g_valid = c_valid and g_valid
 
     # Step 2: input number of questions
     val_question = st.number_input(
         "Questions",
         min_value=1,
-        disabled=not b_c_valid,
+        disabled=not c_g_valid,
         help="Total number of questions"
     )
 
-    if b_c_valid:
+    if c_g_valid:
         q_valid, a_limit = st.session_state['validator'].validate_questions_num(val_question, val_choice, val_group)
         st.write(f"✓" if q_valid else f"Invalid: page dimensions allow {a_limit} questions maximum")
         if q_valid:
@@ -113,11 +113,13 @@ with tab1:
             else:
                 st.session_state["answer_keys"] = answer_keys
                 st.success(f"Loaded {len(answer_keys)} key entries.")
+                k_valid = True
                 # st.json(answer_keys[:1])
 
     # ==========================================================================================
     # Generation output
-    if st.button("Generate"):
+    no_generate = False if (k_valid and c_g_valid and q_valid) else True
+    if st.button("Generate", disabled=no_generate):
         if st.session_state.get('answer_keys') is None:
             st.warning("Please upload a valid answer key file")
         else:
@@ -153,7 +155,7 @@ with tab1:
                                data=st.session_state['template_img'],
                                file_name="template.png")
         if st.button("Clear"):
-            del st.session_state["answer_keys"]
+            # del st.session_state["answer_keys"]
             del st.session_state['sheet_pdf']
             del st.session_state['template_img']
             st.rerun()
@@ -225,7 +227,7 @@ with tab1:
 # Extractor tab
 with tab2:
     # Upload images
-    st.header("1. First, upload the template and student answer sheet:")
+    st.header("1. First, upload the template and student answer sheet")
     template = st.file_uploader("Template Image", type=['png', 'jpg', 'jpeg', 'pdf'])
     if template:
         gray_template = file_to_grayscale(template)
@@ -235,7 +237,7 @@ with tab2:
         gray_photo = file_to_grayscale(student_sheet)
 
     # Config grading
-    st.header("2. Then, customize the grading behavior:")
+    st.header("2. Then, customize the grading behavior")
     partial = st.checkbox("Give points to partially correct answers")
     deduct = st.checkbox("Deduct points for wrong answers")
     if deduct:

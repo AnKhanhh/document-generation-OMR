@@ -184,9 +184,9 @@ def remove_box_lines(image, text_boxes, brush_thickness, margin=0):
             [margin, h + margin]
         ], dtype=np.int32)
 
-        # Create mask of box edges (3x brush thickness for redundancy)
+        # Create mask of box edges
         edge_mask = np.zeros_like(binary_roi)
-        mask_thickness = int(brush_thickness * 3)
+        mask_thickness = int(brush_thickness * 5)
         cv2.polylines(edge_mask, [rel_box], True, 255, mask_thickness)
 
         # 1. Apply mask to isolate edge area
@@ -194,10 +194,10 @@ def remove_box_lines(image, text_boxes, brush_thickness, margin=0):
 
         # 2. Apply morphological opening to detect box edges in masked area
         # Vertical lines
-        vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, int(brush_thickness * 2)))
+        vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, int(brush_thickness * 3)))
         vertical_lines = cv2.morphologyEx(edges_only, cv2.MORPH_OPEN, vertical_kernel)
         # Horizontal lines
-        horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (int(brush_thickness * 2), 1))
+        horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (int(brush_thickness * 3), 1))
         horizontal_lines = cv2.morphologyEx(edges_only, cv2.MORPH_OPEN, horizontal_kernel)
         # Combine
         all_lines = cv2.bitwise_or(vertical_lines, horizontal_lines)

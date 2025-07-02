@@ -265,7 +265,7 @@ def visualize_rois(image: np.ndarray, roi_coords: List[np.ndarray],
     vis = image.copy() if len(image.shape) == 3 else cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
 
     # Draw ROI boundaries
-    colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255)]  # BGR
+    colors = [(255, 0, 0), (0, 0, 0), (255, 0, 0)]  # BGR
     for roi, color in zip(roi_coords, colors):
         cv2.polylines(vis, [roi], True, color, 2)
 
