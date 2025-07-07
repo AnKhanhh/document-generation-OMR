@@ -28,7 +28,6 @@ class AnswerSheetLayoutValidator:
     """Validates answer sheet layout constraints"""
 
     def __init__(self, constraints: LayoutConstraints):
-
         self.constraints = constraints
 
     def validate_choices_per_question(self, choices_per_question: int) -> Tuple[bool, Optional[int]]:
@@ -44,13 +43,9 @@ class AnswerSheetLayoutValidator:
 
         # Calculate minimum group width
         min_group_width = question_number_width + (choices_per_question * choice_width)
+        max_choices = int((self.constraints.available_width - question_number_width) / choice_width)
 
-        if min_group_width <= self.constraints.available_width:
-            return True, None
-        else:
-            # Calculate maximum choices that fit
-            max_choices = int((self.constraints.available_width - question_number_width) / choice_width)
-            return False, max_choices
+        return min_group_width <= self.constraints.available_width, max_choices
 
     def validate_questions_per_group(self, questions_per_group: int) -> Tuple[bool, Optional[int]]:
         """
@@ -71,24 +66,25 @@ class AnswerSheetLayoutValidator:
                              self.constraints.section_label_height +
                              self.constraints.lettering_height)
 
-        if min_height_needed <= self.constraints.available_height:
-            return True, None
-        else:
-            # Calculate maximum questions per group that fit
-            max_questions_per_group = int(
-                (self.constraints.available_height - self.constraints.section_label_height -
-                 self.constraints.answer_group_top_margin - self.constraints.lettering_height) /
-                self.constraints.question_height
-            )
+        max_questions_per_group = int(
+            (self.constraints.available_height - self.constraints.section_label_height -
+             self.constraints.answer_group_top_margin - self.constraints.lettering_height) /
+            self.constraints.question_height
+        )
 
-            return False, max_questions_per_group
+        return min_height_needed <= self.constraints.available_height, max_questions_per_group
+
+    def max_group_on_row(self, choices_per_question: int):
+        return int(
+            self.constraints.available_width /
+            (self.constraints.question_number_label_width + (choices_per_question * self.constraints.bubble_horizontal_space))
+        )
 
     def validate_questions_num(self, num_questions: int, choices_per_question: int, questions_per_group: int) -> Tuple[bool, Optional[int]]:
         """
         Validate if total number of questions can fit with the validated choices_per_question
         and questions_per_group.
-        Requires both valid_cpq and valid_qpg to be True.
-        Returns: (is_valid, max_num_questions if invalid)
+        Returns: (is_valid, max_num_questions)
         """
         # Calculate dimensions
         question_number_width = self.constraints.question_number_label_width
@@ -97,7 +93,7 @@ class AnswerSheetLayoutValidator:
         group_height = self.constraints.answer_group_top_margin + (self.constraints.question_height * questions_per_group)
 
         # Calculate layout constraints
-        max_groups_per_row = int(self.constraints.available_width / group_width)
+        max_groups_per_row = self.max_group_on_row(choices_per_question)
 
         # Calculate maximum rows that fit
         max_rows = int(
@@ -109,7 +105,4 @@ class AnswerSheetLayoutValidator:
         max_groups = max_rows * max_groups_per_row
         max_total_questions = max_groups * questions_per_group
 
-        if num_questions <= max_total_questions:
-            return True, None
-
-        return False, max_total_questions
+        return num_questions <= max_total_questions, max_total_questions

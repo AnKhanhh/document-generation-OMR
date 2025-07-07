@@ -26,6 +26,69 @@ def render_config(show: bool) -> dict:
     return params
 
 
+def find_optimal_grouping(num_questions: int, choices_per_question: int, validator) -> tuple[int, str, int]:
+    """
+    Find optimal grouping for given questions and choices.
+    Returns (grouping, reason_message, max_possible_questions)
+    """
+    best_grouping = None
+    reason = ""
+
+    # Track the grouping that allows maximum questions (even if less than requested)
+    max_capacity_grouping = None
+    max_capacity = 0
+
+    # Phase 1: Try ideal range (4-6)
+    for g in range(4, 7):
+        if g > num_questions:
+            continue
+        valid, max_q = validator.validate_questions_num(num_questions, choices_per_question, g)
+
+        # Track maximum capacity
+        if max_q > max_capacity:
+            max_capacity = max_q
+            max_capacity_grouping = g
+
+        if valid:
+            # Check aesthetic: does it create complete rows in 3-column layout?
+            groups_per_row = validator.max_group_on_row(choices_per_question)
+            total_rows = (num_questions + g - 1) // g  # Ceiling division
+            is_aesthetic = total_rows % groups_per_row == 0
+
+            if is_aesthetic:
+                print(f"found optimal grouping={g} for questions={num_questions} and choices={choices_per_question}")
+                return g, f"All input valid, ready to generate answer sheet", num_questions
+            if best_grouping is None:
+                best_grouping = g
+                reason = "All input valid, ready to generate answer sheet"
+
+    # Phase 2: Expand search if nothing in ideal range works
+    if best_grouping is None:
+        _, max_val_g = validator.validate_questions_per_group(4)
+        max_val_g = min(max_val_g, num_questions)
+        for distance in range(1, max_val_g):
+            for g in [4 - distance, 6 + distance]:
+                if g < 1 or g > max_val_g:
+                    continue
+                valid, max_q = validator.validate_questions_num(num_questions, choices_per_question, g)
+
+                # Track maximum capacity
+                if max_q > max_capacity:
+                    max_capacity = max_q
+                    max_capacity_grouping = g
+
+                if valid:
+                    print(f"found grouping={g} for questions={num_questions} and choices={choices_per_question}")
+                    return g, "All input valid, ready to generate answer sheet", num_questions
+
+    # Return best from ideal range if found
+    if best_grouping:
+        return best_grouping, reason, num_questions
+
+    # No valid grouping found - return the one with highest capacity
+    return None, f"maximum total {max_capacity} questions allowed", max_capacity
+
+
 DISTORTION_CONFIG = {
     'severity': ('Perspective Severity', 0.6, 0.0, 1.0, 0.01),
     'angle': ('Rotation Angle', 50, 0, 360, 1),
@@ -51,53 +114,19 @@ tab1, tab2 = st.tabs(["Generator", "Extractor"])
 # Generator tab
 with tab1:
     # ==========================================================================================
-    # Step 1: input choices and groupings
-    q_valid, c_valid, g_valid, k_valid = False, False, False, False
-    st.header("1. First, define answer sheet parameters")
-    col_choice, col_group = st.columns(2)
-
-    with col_choice:
-        val_choice = st.number_input("Choices", min_value=2, max_value=26, value=4,
-                                     help="Number of choices per question")
-
-    with col_group:
-        val_group = st.number_input("Groupings", min_value=1, value=5,
-                                    help="Number of questions per group")
-
-    c_valid, c_limit = st.session_state['validator'].validate_choices_per_question(val_choice)
-    g_valid, g_limit = st.session_state['validator'].validate_questions_per_group(val_group)
-    col_choice.write("✓" if c_valid else f"Invalid: question can hold {c_limit} choices maximum")
-    col_group.write("✓" if g_valid else f"Invalid: group can hold {g_limit} questions maximum")
-    c_g_valid = c_valid and g_valid
-
-    # Step 2: input number of questions
-    val_question = st.number_input(
-        "Questions",
-        min_value=1,
-        disabled=not c_g_valid,
-        help="Total number of questions"
-    )
-
-    if c_g_valid:
-        q_valid, a_limit = st.session_state['validator'].validate_questions_num(val_question, val_choice, val_group)
-        st.write(f"✓" if q_valid else f"Invalid: page dimensions allow {a_limit} questions maximum")
-        if q_valid:
-            if val_group > val_question:
-                st.warning(f"Group size exceed number of questions, reduced to {val_question}")
-                val_group = val_question
-            st.success(f"✓ All input parameters validated")
-
-    # Step 3: input answer key
-    st.divider()
-    st.header("2. Then, either upload answer key")
-    st.caption("Answer key file must meet the specified format. Click on question mark button for detail.")
+    # Step 1: Upload answer key first
+    st.header("1. Upload answer keys file to generate document")
+    st.caption("Answer key file must meet the specified format. Hover on question mark for details.")
     from utility.read_keys import load_dataframe, dataframe_to_answer_keys
 
     key_file = st.file_uploader("Answer Keys", type=['csv', 'xlsx', 'xls'],
-                                disabled=not q_valid,
                                 help="A valid answer key file must have 3 following columns: | question | answer | score |."
                                      " Cells under 'score' can be left empty, in which case default_score=1."
-                                     " Answers must be letters, and comma-separated.")
+                                     " Answers must be comma-separated letters.")
+
+    k_valid = False
+    val_question = 0
+
     if key_file:
         df, load_error = load_dataframe(key_file)
         if load_error:
@@ -106,19 +135,47 @@ with tab1:
             answer_keys, process_error = dataframe_to_answer_keys(df)
             if process_error:
                 st.error(process_error)
-            elif len(answer_keys) != val_question:
-                st.error(f"Length mismatch: {len(answer_keys)} answer key entries, expected {val_question}!")
-            elif not all(d['question'] <= val_question for d in answer_keys):
-                st.error(f"Invalid entry: out-of-bound question number")
             else:
-                st.session_state["answer_keys"] = answer_keys
-                st.success(f"Loaded {len(answer_keys)} key entries.")
-                k_valid = True
-                # st.json(answer_keys[:1])
+                val_question = len(answer_keys)
+                if not all(d['question'] <= val_question for d in answer_keys):
+                    st.error(f"Invalid entry: out-of-bound question number")
+                else:
+                    st.session_state["answer_keys"] = answer_keys
+                    st.success(f"✓ Loaded {val_question} questions from answer key file")
+                    k_valid = True
+
+    # Step 2: Define answer sheet parameters
+    st.subheader("Specify the number of choices for each question")
+    val_choice = st.number_input("Choices per question", min_value=2, max_value=26, value=4,
+                                 help="Number of choices per question",
+                                 disabled=not k_valid)
+
+    c_valid, c_limit = st.session_state['validator'].validate_choices_per_question(val_choice)
+    if not c_valid:
+        st.error(f"Invalid: question can hold {c_limit} choices maximum")
+
+    # Auto-calculate optimal grouping if we have valid inputs
+    val_group = None
+    q_valid = False
+
+    if k_valid and c_valid and val_question > 0:
+        # Find optimal grouping
+        val_group, reason, max_possible = find_optimal_grouping(val_question, val_choice, st.session_state['validator'])
+
+        if val_group:
+            # If we found a valid grouping, questions definitely fit
+            q_valid = True
+            st.success(f"✓ {reason}")
+        else:
+            # No valid grouping found - show maximum possible
+            st.error(f"Cannot fit {val_question} questions with {val_choice} choices. {reason}")
+    else:
+        if k_valid and not c_valid:
+            st.warning("Please select valid value for number of choices per question")
 
     # ==========================================================================================
     # Generation output
-    no_generate = False if (k_valid and c_g_valid and q_valid) else True
+    no_generate = not (k_valid and c_valid and q_valid and val_group is not None)
     if st.button("Generate", disabled=no_generate):
         if st.session_state.get('answer_keys') is None:
             st.warning("Please upload a valid answer key file")
@@ -133,14 +190,15 @@ with tab1:
             )
             # Save data into DB
             key_model = AnswerKeys()
-            key_model.set_answers(answer_keys)
+            key_model.set_answers(st.session_state["answer_keys"])
             db_metrics_log = DatabaseBridge.create_complete_sheet(template_sheet.static_metrics,
                                                                   key_model,
                                                                   template_sheet.dynamic_metrics)
             # Serve generated sheet
             st.session_state['sheet_pdf'] = buffer_gen_pdf.getvalue()
             st.session_state['template_img'] = pdf_stream_2_img(buffer_gen_pdf.getvalue())
-            st.success(f"Answer sheet ready for download! Layout metrics saved to BD with uuid {db_metrics_log['instance_id']}")
+            print(f"Document metadata saved with uuid {db_metrics_log['instance_id']}")
+            st.success("Answer sheet ready for download!")
 
     # Show download buttons if files exist in session state
     if 'sheet_pdf' in st.session_state and 'template_img' in st.session_state:
@@ -162,29 +220,50 @@ with tab1:
 
     # ==========================================================================================
     # Synth data test
-    # Configuration mapping: param_name -> (label, default, min, max, step)
-
     st.divider()
-    st.header("3. Or run an integration test")
+    st.header("2. Or run an integration test")
     st.text("The integration test will:")
     st.text("- Generate random answer keys")
     st.text("- Generate random student sheets")
     st.text("- Extract data from student sheet, grade and export result")
+
+    # Integration test needs its own inputs now
+    col_test_q, col_test_c = st.columns(2)
+    with col_test_q:
+        test_val_question = st.number_input("Test questions", min_value=1, value=20,
+                                            help="Number of questions for test")
+    with col_test_c:
+        test_val_choice = st.number_input("Test choices", min_value=2, max_value=26, value=4,
+                                          help="Choices per question for test")
+
+    # Validate test inputs and find grouping
+    test_c_valid, _ = st.session_state['validator'].validate_choices_per_question(test_val_choice)
+    test_val_group = None
+    test_q_valid = False
+
+    if test_c_valid:
+        test_val_group, test_reason, test_max = find_optimal_grouping(test_val_question, test_val_choice, st.session_state['validator'])
+        if test_val_group:
+            test_q_valid = True
+            # st.info(f"Test will use groups of {test_val_group} ({test_reason})")
+        else:
+            st.error(f"Invalid test parameters: {test_reason}")
     config_distortion = st.checkbox("Configure parameters for synthetic document distortion", value=False)
     params = render_config(config_distortion)
-    if st.button("Run test on program pipeline"):
+
+    if st.button("Run test on program pipeline", disabled=not (test_q_valid and test_val_group)):
         # Generate synthetic input - template
         with st.spinner("Generating synthetic input..."):
             buffer_gen_pdf = io.BytesIO()
             template_sheet = AnswerSheetGenerator()
             shared_sheet_id = st.session_state['id_gen'].generate()
             template_sheet.generate_answer_sheet(
-                num_questions=val_question, choices_per_question=val_choice, questions_per_group=val_group,
+                num_questions=test_val_question, choices_per_question=test_val_choice, questions_per_group=test_val_group,
                 buffer=buffer_gen_pdf,
                 sheet_id=shared_sheet_id
             )
             key_model = AnswerKeys()
-            key_model.set_answers(generate_answer_keys(num_questions=val_question, choices_per_question=val_choice))
+            key_model.set_answers(generate_answer_keys(num_questions=test_val_question, choices_per_question=test_val_choice))
             db_metrics_log = DatabaseBridge.create_complete_sheet(template_sheet.static_metrics,
                                                                   key_model,
                                                                   template_sheet.dynamic_metrics)
@@ -195,7 +274,7 @@ with tab1:
             buffer_gen_synth = io.BytesIO()
             synthetic_sheet = AnswerSheetGenerator(fill_in=True)
             synthetic_sheet.generate_answer_sheet(
-                num_questions=val_question, choices_per_question=val_choice, questions_per_group=val_group,
+                num_questions=test_val_question, choices_per_question=test_val_choice, questions_per_group=test_val_group,
                 buffer=buffer_gen_synth,
                 sheet_id=shared_sheet_id
             )
@@ -218,7 +297,7 @@ with tab1:
         with col_img_synth:
             st.download_button("Extraction result 📄", data=st.session_state['summary_synth'], file_name="summary.pdf")
 
-        if st.button('Clear'):
+        if st.button('Clear', key='clear_synth'):
             del st.session_state['distorted_filled']
             del st.session_state['template_pdf']
             del st.session_state['summary_synth']
@@ -286,6 +365,6 @@ with tab2:
 
     if 'summary_pdf' in st.session_state:
         st.download_button("Download report 📄", data=st.session_state['summary_pdf'], file_name="summary.pdf")
-        if st.button("Clear"):
+        if st.button("Clear", key='clear_extract'):
             del st.session_state["summary_pdf"]
             st.rerun()
